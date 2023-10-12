@@ -2,6 +2,22 @@
 /// <reference lib="dom" />
 
 import { hydrateRoot } from 'react-dom/client';
+import { createBrowserRouter, RouterProvider } from 'react-router-dom';
 import { App } from "./main";
+import routes from './routes';
+// import {
+//     createBrowserRouter,
+//     RouterProvider,
+//   } from "react-router-dom";
+// import routes from "./routes";
 
-hydrateRoot(document, <App />);
+// let router = createBrowserRouter(routes);
+
+// hydrateRoot(document, <App />/* <RouterProvider router={router} /> */);
+
+let router = createBrowserRouter(routes);
+
+hydrateRoot(
+  document.getElementById("app"),
+  <RouterProvider router={router} />
+)

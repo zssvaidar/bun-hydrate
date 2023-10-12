@@ -1,6 +1,11 @@
 // index.ts
 import { renderToReadableStream } from 'react-dom/server';
 import { ServerApp } from './serverMain';
+import { createStaticHandler, createStaticRouter, StaticHandlerContext, StaticRouterProvider } from 'react-router-dom/server'
+import createFetchRequest from './request'
+import ReactDOMServer from "react-dom/server";
+
+import routes from './routes';
 
 const buildsMatchers = new Map<string, () => Response>();
 
@@ -35,6 +40,8 @@ const serveBuild = (req: Request) => {
   }
 }
 
+let handler = createStaticHandler(routes);
+
 const serveDemoPage = async (req: Request) => {
   const { pathname } = new URL(req.url);
 
@@ -46,7 +53,7 @@ const serveDemoPage = async (req: Request) => {
           });
     }
 
-  if (pathname === "/demo" && req.method === "GET") {
+  if (pathname === "/" && req.method === "GET") {
     const AppComponent = await ServerApp();
 
     const stream = await renderToReadableStream(AppComponent, {
@@ -59,6 +66,22 @@ const serveDemoPage = async (req: Request) => {
       },
     });
   }
+
+  let fetchRequest = createFetchRequest(req);
+  let context = await handler.query(fetchRequest) as StaticHandlerContext;
+
+  let router = createStaticRouter(
+    handler.dataRoutes,
+    context
+  );
+  let html = ReactDOMServer.renderToString(
+    <StaticRouterProvider
+      router={router}
+      context={context}
+    />
+  );
+
+  return new Response("<!DOCTYPE html>" + html)
 };
 
 await init();
@@ -71,7 +94,7 @@ export const server = Bun.serve({
     if (buildFileRequest) {
       return buildFileRequest;
     }
-    
+
     const demoPageRequest = await serveDemoPage(req, server);
 
     if (demoPageRequest) {
@@ -79,7 +102,7 @@ export const server = Bun.serve({
     }
 
     return new Response(JSON.stringify({ status: 404, message: "Not found" }), { status: 404 });
-  },
+  }
 });
 
 console.log(`Listening on ${server.hostname}:${server.port}`);
