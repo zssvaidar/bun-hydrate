@@ -1,11 +1,12 @@
 // index.ts
 import { renderToReadableStream } from 'react-dom/server';
 import { ServerApp } from './serverMain';
-import { createStaticHandler, createStaticRouter, StaticHandlerContext, StaticRouterProvider } from 'react-router-dom/server'
+import { createStaticHandler, createStaticRouter, StaticHandlerContext, StaticRouter, StaticRouterProvider } from 'react-router-dom/server'
 import createFetchRequest from './request'
 import ReactDOMServer from "react-dom/server";
 
 import routes from './routes';
+import Home from './src/app/packages/core/pages/Home';
 
 const buildsMatchers = new Map<string, () => Response>();
 
@@ -66,22 +67,32 @@ const serveDemoPage = async (req: Request) => {
       },
     });
   }
+  
 
-  let fetchRequest = createFetchRequest(req);
-  let context = await handler.query(fetchRequest) as StaticHandlerContext;
-
-  let router = createStaticRouter(
-    handler.dataRoutes,
-    context
-  );
   let html = ReactDOMServer.renderToString(
-    <StaticRouterProvider
-      router={router}
-      context={context}
-    />
+    <StaticRouter location={req.url}>
+      12312
+      <Home />
+    </StaticRouter>
   );
 
   return new Response("<!DOCTYPE html>" + html)
+
+  // let fetchRequest = createFetchRequest(req);
+  // let context = await handler.query(fetchRequest) as StaticHandlerContext;
+
+  // let router = createStaticRouter(
+  //   handler.dataRoutes,
+  //   context
+  // );
+  // let html = ReactDOMServer.renderToString(
+  //   <StaticRouterProvider
+  //     router={router}
+  //     context={context}
+  //   />
+  // );
+
+  // return new Response("<!DOCTYPE html>" + html)
 };
 
 await init();
