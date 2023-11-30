@@ -1,10 +1,10 @@
-module.exports = function createFetchRequest(req) {
-    let origin = `${req.protocol}://${req.get("host")}`;
+module.exports = function createFetchRequest(host, protocol, req) {
+    let origin = `${req.protocol}://${host}`;
     // Note: This had to take originalUrl into account for presumably vite's proxying
     let url = new URL(req.originalUrl || req.url, origin);
   
     let controller = new AbortController();
-    req.on("close", () => controller.abort());
+    // req.on("close", () => controller.abort());
   
     let headers = new Headers();
   
@@ -19,7 +19,6 @@ module.exports = function createFetchRequest(req) {
         }
       }
     }
-  
     let init = {
       method: req.method,
       headers,
@@ -29,6 +28,8 @@ module.exports = function createFetchRequest(req) {
     if (req.method !== "GET" && req.method !== "HEAD") {
       init.body = req.body;
     }
+
+    console.log(url.href);
   
     return new Request(url.href, init);
   };

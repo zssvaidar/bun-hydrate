@@ -1,19 +1,7 @@
 import React, { Suspense, useEffect, useState } from "react";
 import { Button } from "./src/app/packages/core/button/button";
 import Content from "./src/app/Content";
-import { createStaticHandler, createStaticRouter, StaticRouterProvider } from "react-router-dom/server";
-import routes from "./routes";
 
-// import {
-//     createBrowserRouter,
-//     RouterProvider,
-
-//   } from "react-router-dom";
-// import {
-//   createStaticHandler,
-//     createStaticRouter,
-//     StaticRouterProvider
-// } from "react-router-dom/server";
 
 
 const DemoComponent = () => {
@@ -39,27 +27,9 @@ const DemoComponent = () => {
   );
 }
 
-
 export class App extends React.Component{
 
   render () {
-    const [data, setData] = useState([]);
-    
-  const getAffiliates = async (setData)=>{
-    const newText = await fetch('http://custom515.com/home');
-    setData(newText)
-  }
-
-    useEffect(()=> {
-      getAffiliates(setData)
-    },[])
-    // let { query } = createStaticHandler(routes);
-
-    // const staticContext = {};
-    let { query, dataRoutes } = createStaticHandler(routes);
-    // let context = query({});
-    let router = createStaticRouter(dataRoutes, data as any);
-    // const router = createStaticRouter(routes, context)
     return (
         <React.StrictMode>
           <html lang="en">
@@ -70,7 +40,7 @@ export class App extends React.Component{
             </head>
             <body>
               <h1>Hello, world</h1>
-              <StaticRouterProvider router={router} context={data}/>
+              <a href={`/page/1`}>Page One Link</a>
               <Content />
               <Button onClick={() => alert('clicked')} />
               <DemoComponent />

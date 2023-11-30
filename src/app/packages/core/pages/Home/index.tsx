@@ -1,6 +1,6 @@
 import React from "react";
 
-export default class Content extends React.Component {
+export default class Index extends React.Component {
 
 
     render() {
