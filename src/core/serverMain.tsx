@@ -2,9 +2,9 @@
 import PageHomeOne from 'app/packages/core/pages/PageHomeOne';
 import React from 'react';
 import { StaticRouterProvider, createStaticHandler, createStaticRouter } from 'react-router-dom/server';
-import Home from './src/app/packages/core/pages/Home/index'
+import Home from 'app/packages/core/pages/Home/index'
 import { json } from 'react-router-dom';
-const createFetchRequest = require("./request");
+const createFetchRequest = require("./lib/request");
 
 export class App extends React.Component <{context: any, dataRoutes: any}, { context: {}, dataRoutes: {}}>{
 

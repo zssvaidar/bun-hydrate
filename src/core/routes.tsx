@@ -1,7 +1,6 @@
+// routes.tsx
 import React from "react";
-import { createBrowserRouter } from "react-router-dom";
-import { App } from "./main";
-import Home from './src/app/packages/core/pages/Home/index'
+import Home from 'app/packages/core/pages/Home/index'
 const { json, useLoaderData } = require("react-router-dom");
 
 export default [

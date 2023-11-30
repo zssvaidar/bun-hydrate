@@ -1,13 +1,5 @@
 // index.ts
-import { renderToReadableStream } from 'react-dom/server';
-import { ServerApp } from './serverMain';
-import { createStaticHandler, createStaticRouter, StaticHandlerContext, StaticRouter, StaticRouterProvider } from 'react-router-dom/server'
-import createFetchRequest from './request'
-import ReactDOMServer from "react-dom/server";
-
-import routes from './routes';
-import Home from './src/app/packages/core/pages/Home';
-import PageHomeOne from 'app/packages/core/pages/PageHomeOne';
+import Controller from 'core/controller'
 
 const buildsMatchers = new Map<string, () => Response>();
 
@@ -42,44 +34,6 @@ const serveBuild = (req: Request) => {
   }
 }
 
-let handler = createStaticHandler(routes);
-
-const serveDemoPage = async (req: Request) => {
-  const { pathname } = new URL(req.url);
-
-  if (pathname === "/data" && req.method === "GET") {
-      return new Response(JSON.stringify({ time: new Date().toTimeString() }), {
-        headers: {
-          'Content-Type': 'text/json',
-        },
-      });
-  }
-
-  if (pathname === "/" && req.method === "GET") {
-
-    const AppComponent = await ServerApp('localhost:3000', 'http', req);
-
-    const stream = await renderToReadableStream(AppComponent, {
-      bootstrapModules: ['./hydrate.js'],
-    });
-
-    return new Response(stream, {
-      headers: {
-        'content-type': 'text/html',
-      },
-    });
-  }
-
-  const pokemonNameRegex = /^\/page\/([a-zA-Z0-9_-]+)$/;
-  const pageNum = pathname.match(pokemonNameRegex);
-
-  const stream = await renderToReadableStream(<PageHomeOne pageNum={pageNum} />);
-
-  return new Response(stream, {
-    headers: { "Content-Type": "text/html" },
-  });
-};
-
 await init();
 
 export const server = Bun.serve({
@@ -91,10 +45,10 @@ export const server = Bun.serve({
       return buildFileRequest;
     }
 
-    const demoPageRequest = await serveDemoPage(req, server);
+    const response = await Controller(req, server); // demoPageRequest
 
-    if (demoPageRequest) {
-      return demoPageRequest;
+    if (response) {
+      return response;
     }
 
     return new Response(JSON.stringify({ status: 404, message: "Not found" }), { status: 404 });
