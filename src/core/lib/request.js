@@ -29,8 +29,6 @@ module.exports = function createFetchRequest(host, protocol, req) {
       init.body = req.body;
     }
 
-    console.log(url.href);
-  
     return new Request(url.href, init);
   };
   

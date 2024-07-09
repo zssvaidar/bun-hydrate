@@ -1,9 +1,14 @@
 // controller.tsx
 import { ServerApp } from './serverMain';
-import { renderToReadableStream } from 'react-dom/server';
+import {renderToReadableStream} from 'react-dom/server.browser'
 import PageHomeOne from 'app/packages/core/pages/PageHomeOne';
+import ProgramType from './types/ProgramType';
 
-const Controller = async (req: Request) => {
+const PORT = process.env.port;
+const HOST = process.env.host;
+const protocol = process.env.protocol;
+
+const Controller = async (programType: any, req: Request) => {
     const { pathname } = new URL(req.url);
 
     if (pathname === "/data" && req.method === "GET") {
@@ -16,7 +21,7 @@ const Controller = async (req: Request) => {
 
     if (pathname === "/" && req.method === "GET") {
 
-      const AppComponent = await ServerApp('localhost:3000', 'http', req);
+      const AppComponent = await ServerApp(`${HOST}:${PORT}`, protocol, req);
 
       const stream = await renderToReadableStream(AppComponent, {
         bootstrapModules: ['./hydrate.js'],
@@ -29,6 +34,8 @@ const Controller = async (req: Request) => {
       });
     }
   
+    // https://www.tercmd.com/creating-file-system-routing-in-bun
+
     const pokemonNameRegex = /^\/page\/([a-zA-Z0-9_-]+)$/;
     const pageNum = pathname.match(pokemonNameRegex);
 

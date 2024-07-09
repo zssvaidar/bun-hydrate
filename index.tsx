@@ -1,7 +1,27 @@
 // index.ts
-import Controller from 'core/controller'
+import Controller from './src/core/controller'
+import { parseArgs } from "util";
+import { isNil } from "lodash";
+import ProgramType from './src/core/types/ProgramType'
 
 const buildsMatchers = new Map<string, () => Response>();
+
+const PORT = process.env.port;
+const HOST = process.env.host;
+
+const { values, positionals } = parseArgs({
+  args: Bun.argv,
+  options: {
+    programType: {
+      type: 'string'
+    },
+  },
+  strict: true,
+  allowPositionals: true,
+});
+
+if(isNil(values.programType))
+  throw new Error("no program type specified, either api, web");
 
 const init = async () => {
   const builds = await Bun.build({
@@ -37,7 +57,8 @@ const serveBuild = (req: Request) => {
 await init();
 
 export const server = Bun.serve({
-  port: 3000,
+  hostname: HOST,
+  port: PORT,
   async fetch(req, server) {
     const buildFileRequest = serveBuild(req);
 
@@ -45,7 +66,7 @@ export const server = Bun.serve({
       return buildFileRequest;
     }
 
-    const response = await Controller(req, server); // demoPageRequest
+    const response = await Controller(values.programType, req/* , server */); // demoPageRequest
 
     if (response) {
       return response;
@@ -55,4 +76,4 @@ export const server = Bun.serve({
   }
 });
 
-console.log(`Listening on ${server.hostname}:${server.port}`);
+console.log(`Listening on ${HOST}:${PORT}`);

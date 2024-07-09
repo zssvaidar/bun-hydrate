@@ -10,8 +10,10 @@
     "typescript": "^5.0.0"
   },
   "dependencies": {
-    "react": "^18.2.0",
-    "react-dom": "^18.2.0",
+    "@types/bun": "^1.1.6",
+    "lodash": "^4.17.21",
+    "react": "^19.0.0-rc-df783f9ea1-20240708",
+    "react-dom": "^19.0.0-rc-df783f9ea1-20240708",
     "react-router-dom": "^6.16.0"
   }
 }
