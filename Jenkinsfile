@@ -4,7 +4,7 @@ pipeline {
 
     environment {
         AWS_REGION      = 'ap-northeast-1'
-        DEPLOY_BUCKET   = 'my-deploy-bucket'
+        DEPLOY_BUCKET   = 'testing-node-app-142369633239'
         BUILD_VERSION   = "${env.BUILD_NUMBER}"
         VAULT_ADDR      = 'http://192.168.0.26:8200'
     }
@@ -33,7 +33,7 @@ pipeline {
             }
         }
 
-        /* stage('Upload Artifact') {
+        stage('Upload Artifact') {
             steps {
                 withVault(
                     configuration: [
@@ -129,7 +129,7 @@ pipeline {
                     }
                 }
             }
-        } */
+        }
     }
 
     post {
