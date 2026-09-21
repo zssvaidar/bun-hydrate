@@ -4,12 +4,27 @@ import {renderToReadableStream} from 'react-dom/server.browser'
 import PageHomeOne from 'app/packages/core/pages/PageHomeOne';
 import ProgramType from './types/ProgramType';
 
-const PORT = process.env.port;
-const HOST = process.env.host;
-const protocol = process.env.protocol;
+const PORT = process.env.port || 3000;
+const HOST = process.env.host || "localhost";
+const protocol = process.env.protocol || "http";
+
+const startedAt = Date.now();
 
 const Controller = async (programType: any, req: Request) => {
     const { pathname } = new URL(req.url);
+
+    if (pathname === "/health" && (req.method === "GET" || req.method === "HEAD")) {
+        return new Response(JSON.stringify({
+          status: "ok",
+          programType,
+          uptime: Math.floor((Date.now() - startedAt) / 1000),
+          timestamp: new Date().toISOString(),
+        }), {
+          headers: {
+            'Content-Type': 'application/json',
+          },
+        });
+    }
 
     if (pathname === "/data" && req.method === "GET") {
         return new Response(JSON.stringify({ time: new Date().toTimeString() }), {

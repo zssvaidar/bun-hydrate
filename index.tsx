@@ -6,8 +6,8 @@ import ProgramType from './src/core/types/ProgramType'
 
 const buildsMatchers = new Map<string, () => Response>();
 
-const PORT = process.env.port;
-const HOST = process.env.host;
+const PORT = process.env.port || 3000;
+const HOST = process.env.host || "0.0.0.0";
 
 const { values, positionals } = parseArgs({
   args: Bun.argv,
@@ -25,7 +25,7 @@ if(isNil(values.programType))
 
 const init = async () => {
   const builds = await Bun.build({
-    entrypoints: ['./hydrate.tsx'],
+    entrypoints: ['./src/core/hydrate.tsx'],
     target: "browser",
     splitting: true,
     minify: {
