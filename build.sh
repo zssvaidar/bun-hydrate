@@ -7,8 +7,8 @@ BUILD_DIR="build_output"
 echo "Building version ${VERSION}..."
 
 # 1. Install dependencies and compile/bundle (Node example)
-npm ci
-npm run build
+npm i
+# npm run build
 
 # 2. Assemble only what actually needs to ship — not node_modules dev deps, tests, etc.
 rm -rf "${BUILD_DIR}"
