@@ -21,13 +21,14 @@ pipeline {
 
                     version = "${env.BUILD_NUMBER}-${commitHash}"
                     echo "version: ${version}"
-                    chmod +x build.sh
             }
+
             }
         }
 
         stage('Build') {
             steps {
+                sh "chmod +x build.sh"
                 sh "./build.sh ${version}"
             }
         }
