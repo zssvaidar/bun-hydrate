@@ -21,6 +21,7 @@ pipeline {
 
                     version = "${env.BUILD_NUMBER}-${commitHash}"
                     echo "version: ${version}"
+                    chmod +x build.sh
             }
             }
         }
