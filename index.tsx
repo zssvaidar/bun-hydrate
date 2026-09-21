@@ -20,8 +20,7 @@ const { values, positionals } = parseArgs({
   allowPositionals: true,
 });
 
-if(isNil(values.programType))
-  throw new Error("no program type specified, either api, web");
+const programType = isNil(values.programType) ? "web" : values.programType;
 
 const init = async () => {
   const builds = await Bun.build({
@@ -66,7 +65,7 @@ export const server = Bun.serve({
       return buildFileRequest;
     }
 
-    const response = await Controller(values.programType, req/* , server */); // demoPageRequest
+    const response = await Controller(programType, req/* , server */); // demoPageRequest
 
     if (response) {
       return response;
