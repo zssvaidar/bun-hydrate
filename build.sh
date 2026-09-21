@@ -8,6 +8,8 @@ echo "Building version ${VERSION}..."
 
 # 1. Install dependencies and compile/bundle (Node example)
 npm i
+ecoh pwd
+bun 
 # npm run build
 
 # 2. Assemble only what actually needs to ship — not node_modules dev deps, tests, etc.
