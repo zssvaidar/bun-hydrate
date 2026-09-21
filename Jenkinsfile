@@ -30,7 +30,7 @@ pipeline {
             steps {
                 sh "chmod +x build.sh"
                 sh "./build.sh ${version}"
-
+// 
                 sh "echo $VAULT_ADDR"
             }
         }
@@ -58,8 +58,8 @@ pipeline {
                         aws sts get-caller-identity
                         aws ec2 describe-instances --region ap-northeast-1 --output json
 
-                        aws s3 cp myapp-${BUILD_VERSION}.tar.gz \
-                            s3://${DEPLOY_BUCKET}/myapp-${BUILD_VERSION}.tar.gz \
+                        aws s3 cp myapp-${version}.tar.gz \
+                            s3://${DEPLOY_BUCKET}/myapp-${version}.tar.gz \
                             --region ap-northeast-1
                     """
                 }
@@ -91,7 +91,7 @@ pipeline {
                               aws ssm send-command \
                                 --document-name "AWS-RunShellScript" \
                                 --targets "Key=tag:Role,Values=app-server" "Key=tag:Environment,Values=production" \
-                                --parameters commands=["/opt/scripts/deploy.sh ${BUILD_VERSION}"] \
+                                --parameters commands=["/opt/scripts/deploy.sh ${version}"] \
                                 --output-s3-bucket-name my-deploy-logs-bucket \
                                 --query 'Command.CommandId' --output text
                             """,
