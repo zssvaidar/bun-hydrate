@@ -21,7 +21,7 @@ pipeline {
 
                     version = "${env.BUILD_NUMBER}-${commitHash}"
                     echo "version: ${version}"
-            }
+                }
 
             }
         }
@@ -30,6 +30,8 @@ pipeline {
             steps {
                 sh "chmod +x build.sh"
                 sh "./build.sh ${version}"
+
+                sh "echo $VAULT_ADDR"
             }
         }
 
@@ -37,9 +39,9 @@ pipeline {
             steps {
                 withVault(
                     configuration: [
-                        vaultUrl: "${VAULT_ADDR}",
+                        vaultUrl: "$VAULT_ADDR",
                         vaultCredentialId: 'vault-approle',
-                        engineVersion: 2
+                        engineVersion: 1
                     ],
                     vaultSecrets: [
                         [
@@ -70,7 +72,7 @@ pipeline {
                     configuration: [
                         vaultUrl: "${VAULT_ADDR}",
                         vaultCredentialId: 'vault-approle',
-                        engineVersion: 2
+                        engineVersion: 1
                     ],
                     vaultSecrets: [
                         [
