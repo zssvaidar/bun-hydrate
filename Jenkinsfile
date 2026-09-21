@@ -9,6 +9,23 @@ pipeline {
         VAULT_ADDR      = 'http://192.168.0.26:8200'
     }
 
+withVault(
+                    configuration: [
+                        vaultUrl: "${VAULT_ADDR}",
+                        vaultCredentialId: 'vault-approle',
+                        engineVersion: 2
+                    ],
+                    vaultSecrets: [
+                        [
+                            path: 'aws/creds/deploy-ssm-role',
+                            secretValues: [
+                                [envVar: 'AWS_ACCESS_KEY_ID', vaultKey: 'access_key'],
+                                [envVar: 'AWS_SECRET_ACCESS_KEY', vaultKey: 'secret_key'],
+                                [envVar: 'AWS_SESSION_TOKEN', vaultKey: 'security_token']
+                            ]
+                        ]
+                    ]
+                ) {
     stages {
         stage('Checkout') {
             steps {
@@ -62,23 +79,7 @@ pipeline {
 
         stage('Deploy via SSM') {
             steps {
-                withVault(
-                    configuration: [
-                        vaultUrl: "${VAULT_ADDR}",
-                        vaultCredentialId: 'vault-approle',
-                        engineVersion: 2
-                    ],
-                    vaultSecrets: [
-                        [
-                            path: 'aws/creds/deploy-ssm-role',
-                            secretValues: [
-                                [envVar: 'AWS_ACCESS_KEY_ID', vaultKey: 'access_key'],
-                                [envVar: 'AWS_SECRET_ACCESS_KEY', vaultKey: 'secret_key'],
-                                [envVar: 'AWS_SESSION_TOKEN', vaultKey: 'security_token']
-                            ]
-                        ]
-                    ]
-                ) {
+                
                     script {
                         def commandId = sh(
                             script: """
@@ -127,11 +128,10 @@ pipeline {
                             error "Deployment failed on instances: ${failed}"
                         }
                     }
-                }
             }
         }
     }
-
+                }
     post {
         failure {
             echo "Deployment failed — check SSM output in S3 (my-deploy-logs-bucket) or per-instance rollback status"
