@@ -9,23 +9,6 @@ pipeline {
         VAULT_ADDR      = 'http://192.168.0.26:8200'
     }
 
-withVault(
-                    configuration: [
-                        vaultUrl: "${VAULT_ADDR}",
-                        vaultCredentialId: 'vault-approle',
-                        engineVersion: 2
-                    ],
-                    vaultSecrets: [
-                        [
-                            path: 'aws/creds/deploy-ssm-role',
-                            secretValues: [
-                                [envVar: 'AWS_ACCESS_KEY_ID', vaultKey: 'access_key'],
-                                [envVar: 'AWS_SECRET_ACCESS_KEY', vaultKey: 'secret_key'],
-                                [envVar: 'AWS_SESSION_TOKEN', vaultKey: 'security_token']
-                            ]
-                        ]
-                    ]
-                ) {
     stages {
         stage('Checkout') {
             steps {
@@ -70,6 +53,9 @@ withVault(
                     ]
                 ) {
                     sh """
+                        aws sts get-caller-identity
+                        aws ec2 describe-instances   --region ap-northeast-1   --output json
+
                       aws s3 cp myapp-${BUILD_VERSION}.tar.gz \
                         s3://${DEPLOY_BUCKET}/myapp-${BUILD_VERSION}.tar.gz
                     """
@@ -79,7 +65,23 @@ withVault(
 
         stage('Deploy via SSM') {
             steps {
-                
+                withVault(
+                    configuration: [
+                        vaultUrl: "${VAULT_ADDR}",
+                        vaultCredentialId: 'vault-approle',
+                        engineVersion: 2
+                    ],
+                    vaultSecrets: [
+                        [
+                            path: 'aws/creds/deploy-ssm-role',
+                            secretValues: [
+                                [envVar: 'AWS_ACCESS_KEY_ID', vaultKey: 'access_key'],
+                                [envVar: 'AWS_SECRET_ACCESS_KEY', vaultKey: 'secret_key'],
+                                [envVar: 'AWS_SESSION_TOKEN', vaultKey: 'security_token']
+                            ]
+                        ]
+                    ]
+                ) {
                     script {
                         def commandId = sh(
                             script: """
@@ -128,10 +130,11 @@ withVault(
                             error "Deployment failed on instances: ${failed}"
                         }
                     }
+                }
             }
         }
     }
-                }
+
     post {
         failure {
             echo "Deployment failed — check SSM output in S3 (my-deploy-logs-bucket) or per-instance rollback status"
