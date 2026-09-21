@@ -1,34 +1,25 @@
 module.exports = function createFetchRequest(host, protocol, req) {
-    let origin = `${req.protocol}://${host}`;
-    // Note: This had to take originalUrl into account for presumably vite's proxying
-    let url = new URL(req.originalUrl || req.url, origin);
-  
+    let origin = `${protocol}://${host}`;
+    let url = new URL(req.url, origin);
+
     let controller = new AbortController();
-    // req.on("close", () => controller.abort());
-  
+
     let headers = new Headers();
-  
-    for (let [key, values] of Object.entries(req.headers)) {
-      if (values) {
-        if (Array.isArray(values)) {
-          for (let value of values) {
-            headers.append(key, value);
-          }
-        } else {
-          headers.set(key, values);
-        }
-      }
+
+    for (let [key, value] of req.headers) {
+      headers.append(key, value);
     }
+
     let init = {
       method: req.method,
       headers,
       signal: controller.signal,
     };
-  
+
     if (req.method !== "GET" && req.method !== "HEAD") {
       init.body = req.body;
+      init.duplex = "half";
     }
 
     return new Request(url.href, init);
   };
-  
