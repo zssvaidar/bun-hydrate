@@ -1,8 +1,7 @@
-
+def version=''
 pipeline {
     agent any
 
-    def version
     environment {
         AWS_REGION      = 'ap-northeast-1'
         DEPLOY_BUCKET   = 'my-deploy-bucket'
