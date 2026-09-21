@@ -1,4 +1,5 @@
 // index.ts
+import { existsSync } from "node:fs";
 import Controller from './src/core/controller'
 import { parseArgs } from "util";
 import { isNil } from "lodash";
@@ -8,6 +9,9 @@ const buildsMatchers = new Map<string, () => Response>();
 
 const PORT = process.env.port || 3000;
 const HOST = process.env.host || "0.0.0.0";
+// Set by `bun run build` (see scripts/build.ts). When present, serve the
+// pre-built client bundle instead of rebuilding it on every boot.
+const PUBLIC_DIR = process.env.PUBLIC_DIR || "./dist/public";
 
 const { values, positionals } = parseArgs({
   args: Bun.argv,
@@ -22,7 +26,25 @@ const { values, positionals } = parseArgs({
 
 const programType = isNil(values.programType) ? "web" : values.programType;
 
+const registerAsset = (pathname: string, asset: { stream: () => ReadableStream; type: string }) => {
+  buildsMatchers.set(pathname, () => new Response(asset.stream(), {
+    headers: {
+      "Content-Type": asset.type,
+    },
+  }));
+};
+
 const init = async () => {
+  if (existsSync(PUBLIC_DIR)) {
+    const glob = new Bun.Glob("**/*");
+
+    for await (const relPath of glob.scan({ cwd: PUBLIC_DIR, onlyFiles: true })) {
+      registerAsset(`/${relPath}`, Bun.file(`${PUBLIC_DIR}/${relPath}`));
+    }
+
+    return;
+  }
+
   const builds = await Bun.build({
     entrypoints: ['./src/core/hydrate.tsx'],
     target: "browser",
@@ -35,11 +57,7 @@ const init = async () => {
   });
 
   for (const build of builds.outputs) {
-    buildsMatchers.set(build.path.substring(1), () => new Response(build.stream(), {
-      headers: {
-        "Content-Type": build.type,
-      },
-    }));
+    registerAsset(build.path.substring(1), build);
   }
 }
 

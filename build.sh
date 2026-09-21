@@ -6,15 +6,15 @@ BUILD_DIR="build_output"
 
 echo "Building version ${VERSION}..."
 
-# 1. Install dependencies and compile/bundle (Node example)
-npm i
-# npm run build
+# 1. Install dependencies and bundle the server + client assets into dist/
+bun install
+bun run build
 
-# 2. Assemble only what actually needs to ship — not node_modules dev deps, tests, etc.
+# 2. Assemble only what actually needs to ship — not source, dev deps, tests, etc.
 rm -rf "${BUILD_DIR}"
 mkdir -p "${BUILD_DIR}"
-cp -r dist package.json package-lock.json "${BUILD_DIR}/"
-cd "${BUILD_DIR}" && npm ci --omit=dev && cd ..
+cp -r dist package.json bun.lockb "${BUILD_DIR}/"
+cd "${BUILD_DIR}" && bun install --production && cd ..
 
 # 3. Package into the exact filename deploy.sh will look for
 tar -czf "myapp-${VERSION}.tar.gz" -C "${BUILD_DIR}" .

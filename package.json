@@ -1,6 +1,11 @@
 {
   "name": "bun-ter",
   "module": "index.ts",
+  "scripts": {
+    "dev": "bun --watch index.tsx",
+    "build": "bun run scripts/build.ts",
+    "start": "bun dist/index.js"
+  },
   "devDependencies": {
     "@types/react": "^18.2.21",
     "@types/react-dom": "^18.2.7",
