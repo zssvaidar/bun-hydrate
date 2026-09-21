@@ -54,10 +54,11 @@ pipeline {
                 ) {
                     sh """
                         aws sts get-caller-identity
-                        aws ec2 describe-instances   --region ap-northeast-1   --output json
+                        aws ec2 describe-instances --region ap-northeast-1 --output json
 
-                      aws s3 cp myapp-${BUILD_VERSION}.tar.gz \
-                        s3://${DEPLOY_BUCKET}/myapp-${BUILD_VERSION}.tar.gz
+                        aws s3 cp myapp-${BUILD_VERSION}.tar.gz \
+                            s3://${DEPLOY_BUCKET}/myapp-${BUILD_VERSION}.tar.gz \
+                            --region ap-northeast-1
                     """
                 }
             }
@@ -73,7 +74,7 @@ pipeline {
                     ],
                     vaultSecrets: [
                         [
-                            path: 'aws/creds/jenkins',
+                            path: 'aws/creds/deploy-ssm-role',
                             secretValues: [
                                 [envVar: 'AWS_ACCESS_KEY_ID', vaultKey: 'access_key'],
                                 [envVar: 'AWS_SECRET_ACCESS_KEY', vaultKey: 'secret_key'],
