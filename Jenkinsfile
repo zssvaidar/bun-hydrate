@@ -90,7 +90,7 @@ pipeline {
                             script: """
                               aws ssm send-command \
                                 --document-name "AWS-RunShellScript" \
-                                --targets "Key=tag:Role,Values=app-server" "Key=tag:Environment,Values=production" \
+                                --targets "Key=tag:Role,Values=testing-node-app" "Key=tag:Environment,Values=production" \
                                 --parameters commands=["/opt/scripts/deploy.sh ${version}"] \
                                 --output-s3-bucket-name my-deploy-logs-bucket \
                                 --query 'Command.CommandId' --output text
