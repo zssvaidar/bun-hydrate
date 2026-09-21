@@ -4,3 +4,4 @@ dump
 dist
 build_output
 *.tar.gz
+bun.lockb
