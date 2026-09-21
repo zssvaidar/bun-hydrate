@@ -14,13 +14,13 @@ pipeline {
         stage('Checkout') {
             steps {
                 checkout scm
-                COMMIT_HASH     = sh(
+                def COMMIT_HASH     = sh(
                     script: 'git rev-parse --short HEAD',
                     returnStdout: true
                 ).trim()
 
                 version = "$BUILD_VERSION-$COMMIT_HASH"
-                echo "commit hash: $COMMIT_HASH"
+                echo "commit hash: $version"
             }
         }
 
