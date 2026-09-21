@@ -6,7 +6,7 @@ pipeline {
         AWS_REGION      = 'ap-northeast-1'
         DEPLOY_BUCKET   = 'testing-node-app-142369633239'
         BUILD_VERSION   = "${env.BUILD_NUMBER}"
-        VAULT_ADDR      = 'http://192.168.0.26:8200'
+        VAULT_ADDR      = 'http://10.238.54.94:8200'
     }
 
     stages {
