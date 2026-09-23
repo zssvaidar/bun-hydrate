@@ -6,7 +6,7 @@ APP_ROOT="/opt/myapp"
 RELEASES_DIR="${APP_ROOT}/releases"
 RELEASE_DIR="${RELEASES_DIR}/${VERSION}"
 CURRENT_LINK="${APP_ROOT}/current"
-ARTIFACT_BUCKET="my-build-artifacts"
+ARTIFACT_BUCKET="${ARTIFACT_BUCKET:?set ARTIFACT_BUCKET, my-build-artifacts}"
 SERVICE_NAME="myapp"
 KEEP_RELEASES=5
 
