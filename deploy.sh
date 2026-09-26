@@ -9,7 +9,7 @@ set -euo pipefail
 # whatever that script actually creates (bunapp / 80 / myapp.service today).
 
 VERSION="$1"
-APP_ROOT="/opt/myapp"
+APP_ROOT="/opt/app"
 APP_USER="bunapp"
 SERVICE_NAME="myapp"
 PORT=80
