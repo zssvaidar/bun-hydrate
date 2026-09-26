@@ -121,7 +121,7 @@ pipeline {
                     ],
                     vaultSecrets: [
                         [
-                            path: 'aws/creds/deploy-ssm-role',
+                            path: 'aws/creds/deploy-s3-role',
                             secretValues: [
                                 [envVar: 'AWS_ACCESS_KEY_ID', vaultKey: 'access_key'],
                                 [envVar: 'AWS_SECRET_ACCESS_KEY', vaultKey: 'secret_key'],
