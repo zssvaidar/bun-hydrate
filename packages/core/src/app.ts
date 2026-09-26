@@ -134,8 +134,11 @@ export class App extends Router {
     this.logger.info("Shutting down");
 
     if (this.server) {
-      const drained = this.server.stop().then(() => true);
-      const finishedInTime = await Promise.race([drained, Bun.sleep(timeoutMs).then(() => false)]);
+      let timer: Timer | undefined;
+      const timedOut = new Promise<false>((resolve) => (timer = setTimeout(() => resolve(false), timeoutMs)));
+      const finishedInTime = await Promise.race([this.server.stop().then(() => true), timedOut]);
+      // A pending timer would keep the process alive after shutdown.
+      clearTimeout(timer);
       if (!finishedInTime) {
         this.logger.warn("Shutdown timeout reached; closing remaining connections", { timeoutMs });
         // Not awaited: it only settles once every handler returns, and a hung handler never will.

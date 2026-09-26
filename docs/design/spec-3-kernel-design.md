@@ -69,6 +69,8 @@ type HandlerResult = Response | string | object | null | undefined;
 
 Onion model: a middleware may act before `next()`, short-circuit by returning its own Response, or post-process the Response `next()` resolves to. Calling `next()` twice is a programming error and throws.
 
+**`await next()` always resolves to a Response.** An error thrown downstream (including the router's own 404/405) is converted into an error response where it is thrown. That lets outer middleware — logging, CORS, security headers — observe and decorate error responses exactly like successful ones, instead of having their post-processing skipped by an exception. (Found while building: the first draft let errors propagate, and a global middleware's "after" step never ran for 404s.)
+
 ### 2.2 Return-value normalization (FR-013)
 
 | Handler returns | Response |
@@ -206,8 +208,11 @@ created ──listen()──▶ initializing ──hooks ok──▶ ready ─�
                         stopped ◀───────── onStop hooks ◀──────────── stopping
 ```
 
-- `app.onStart(fn)` hooks run in registration order before the port is bound. If one throws, the already-started hooks' matching `onStop` hooks run and `listen()` rejects: the app never accepts traffic half-initialised.
-- `app.onStop(fn)` hooks run in **reverse** order (resources close in the opposite order to how they opened).
+- `app.onStart(fn)` hooks run in registration order before the port is bound. A start hook **may return a cleanup function**, which pairs acquiring and releasing a resource in one place:
+  `app.onStart(async () => { const db = await connect(); return () => db.close(); })`.
+  If a start hook throws, the cleanups of the hooks that already completed run (in reverse), the state becomes `stopped`, and `listen()` rejects: the app never accepts traffic half-initialised, and nothing that never started is torn down.
+- `app.onStop(fn)` hooks and the collected cleanups run in **reverse** order on stop (resources close in the opposite order to how they opened). A failing hook is logged and does not prevent the others.
+- The shutdown timeout timer is cleared once draining finishes. A pending timer kept the process alive for the full timeout after "Stopped", which would have stalled every systemd restart; this is now covered by a test.
 - `app.stop({ timeoutMs = 10_000 })`:
   1. state → `stopping`; `/ready` starts returning 503 so load balancers drain.
   2. `server.stop()` stops accepting connections and waits for in-flight requests.
@@ -260,7 +265,7 @@ app.get("/", () => react.render("Home", { message: "hi" }, { title: "Home" }));
 //                                ^ key checked      ^ props type-checked against Home
 ```
 
-Client (`src/web/client.tsx`):
+Client (`src/web/client.tsx`), imported from the browser-only subpath `@bun-hydrate/react/client` so server code never pulls in `react-dom/client`:
 
 ```ts
 hydratePage(pages);
@@ -309,8 +314,12 @@ and produces:
 dist/
 ├── index.js          server bundle (target bun, minified, sourcemap linked)
 ├── public/assets/    client chunks, content-hashed
-└── manifest.json     { "client": { "entry": "/assets/client-ab12.js" }, "builtAt": … }
+└── manifest.json     { "server": "index.js", "client": { "entry": "/assets/client-ab12.js" }, "builtAt": … }
 ```
+
+`client` is absent for API-only apps (no `client` in `hydrate.config.ts`).
+
+- **Minification caveat (Bun 1.3.11):** `minify.syntax` corrupts labelled statements in React's production builds. The server bundle fails to load ("Cannot find scope for the label"), and V8 rejects the client bundle ("Label '_' has already been declared"). Both bundles therefore use `{ whitespace: true, identifiers: true, syntax: false }` (`SAFE_MINIFY`), which costs about 3% of client bundle size. `tests/e2e/build.test.ts` checks every client chunk with V8's parser, and the artifact must boot. Revisit when upgrading Bun.
 
 - **Self-contained:** React and all framework code are bundled, and `process.env.NODE_ENV` is defined as `"production"` at bundle time. This fixes the root cause behind commit `3759704`: the JSX runtime was chosen by an env var at build time. `dist/` then runs with `bun dist/index.js` with no `node_modules`, so `build.sh` no longer needs `bun install --production` on the artifact.
 - `hydrate dev` runs `bun --watch <server>` with `NODE_ENV=development`.

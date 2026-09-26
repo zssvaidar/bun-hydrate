@@ -1,4 +1,6 @@
-type FetchHandler = (request: Request) => Response | Promise<Response>;
+export { spawnServer, type RunningServer, type SpawnServerOptions } from "./spawn";
+
+type FetchHandler =(request: Request) => Response | Promise<Response>;
 export type TestTarget = FetchHandler | { fetch: FetchHandler };
 
 export interface TestClientOptions {

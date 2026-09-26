@@ -1,0 +1,13 @@
+{
+  "name": "@bun-hydrate/cli",
+  "version": "0.1.0",
+  "description": "The `hydrate` command: dev, build, start.",
+  "license": "MIT",
+  "type": "module",
+  "bin": {
+    "hydrate": "./src/bin.ts"
+  },
+  "exports": {
+    ".": "./src/index.ts"
+  }
+}

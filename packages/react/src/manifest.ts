@@ -1,7 +1,10 @@
 /** Written by `hydrate build` to dist/manifest.json; read at runtime to find the hashed client bundle. */
 export interface BuildManifest {
-  client: { entry: string };
   builtAt: string;
+  /** Server bundle, relative to the manifest. */
+  server: string;
+  /** Present only when the app has a browser entry. */
+  client?: { entry: string };
 }
 
 export async function readManifest(path: string): Promise<BuildManifest> {

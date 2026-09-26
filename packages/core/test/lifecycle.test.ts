@@ -142,6 +142,20 @@ describe("lifecycle", () => {
     expect(lines.some((l) => l.includes("close failed"))).toBe(true);
   });
 
+  test("a stopped app leaves nothing keeping the process alive", async () => {
+    const script = `
+      import { App, createLogger } from "${import.meta.dir}/../src/index";
+      const app = new App({ logger: createLogger({ level: "silent" }) });
+      await app.listen({ port: 0, handleSignals: false });
+      await app.stop();
+    `;
+    const startedAt = performance.now();
+    const child = Bun.spawn(["bun", "-e", script]);
+
+    expect(await child.exited).toBe(0);
+    expect(performance.now() - startedAt).toBeLessThan(3_000);
+  });
+
   test("SIGTERM triggers a graceful stop and signal handlers are removed afterwards", async () => {
     const before = process.listenerCount("SIGTERM");
     const app = createApp();

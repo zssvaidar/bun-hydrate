@@ -3,6 +3,14 @@ import type { BuildArtifact } from "bun";
 
 export const ASSETS_PREFIX = "/assets";
 
+/**
+ * Everything except `syntax`: Bun 1.3's syntax minifier corrupts labelled statements in React's
+ * production builds — the server bundle fails to load ("Cannot find scope for the label") and V8
+ * rejects the client bundle ("Label has already been declared"). Covered by tests/e2e/build.test.ts
+ * and tests/e2e/browser.test.ts.
+ */
+export const SAFE_MINIFY = { whitespace: true, identifiers: true, syntax: false } as const;
+
 export interface ClientBundleOptions {
   entry: string;
   production: boolean;
@@ -25,7 +33,7 @@ export async function bundleClient({ entry, production, outdir }: ClientBundleOp
       outdir,
       target: "browser",
       splitting: true,
-      minify: production,
+      minify: production ? SAFE_MINIFY : false,
       sourcemap: production ? "linked" : "inline",
       naming: "[name]-[hash].[ext]",
       define: { "process.env.NODE_ENV": JSON.stringify(production ? "production" : "development") },

@@ -26,7 +26,11 @@ export async function createAssets(options: AssetsOptions): Promise<Assets> {
 
 /** Serves what `hydrate build` produced; file names are content-hashed, so they can be cached forever. */
 async function productionAssets(options: AssetsOptions): Promise<Assets> {
-  const manifest = await readManifest(options.manifestPath ?? "dist/manifest.json");
+  const manifestPath = options.manifestPath ?? "dist/manifest.json";
+  const manifest = await readManifest(manifestPath);
+  if (!manifest.client) {
+    throw new Error(`${manifestPath} has no client bundle. Set \`client\` in hydrate.config.ts and rebuild.`);
+  }
   const publicDir = options.publicDir ?? "dist/public";
 
   return {
