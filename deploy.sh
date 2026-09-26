@@ -25,7 +25,7 @@ PREVIOUS_TARGET=$(readlink -f "${CURRENT_LINK}" 2>/dev/null || echo "")
 #    no window where "current" points to a half-written or missing directory,
 #    unlike the old mv-based swap.
 ln -sfn "${RELEASE_DIR}" "${CURRENT_LINK}"
-
+  
 # 4. Restart the service — it should always be configured to run from
 #    ${CURRENT_LINK}, never a version-specific path, so this restart is all it takes.
 sudo systemctl restart "${SERVICE_NAME}"

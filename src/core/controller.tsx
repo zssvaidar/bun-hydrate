@@ -48,7 +48,11 @@ const Controller = async (programType: any, req: Request) => {
         },
       });
     }
+
   
+    const file = await staticFile(pathname);
+    if (file) return file;
+
     // https://www.tercmd.com/creating-file-system-routing-in-bun
 
     const pokemonNameRegex = /^\/page\/([a-zA-Z0-9_-]+)$/;
