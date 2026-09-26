@@ -7,8 +7,8 @@ import ProgramType from './src/core/types/ProgramType'
 
 const buildsMatchers = new Map<string, () => Response>();
 
-const PORT = process.env.port || 3000;
-const HOST = process.env.host || "0.0.0.0";
+const PORT = process.env.PORT || 3000;
+const HOST = process.env.HOST || "0.0.0.0";
 // Set by `bun run build` (see scripts/build.ts). When present, serve the
 // pre-built client bundle instead of rebuilding it on every boot.
 const PUBLIC_DIR = process.env.PUBLIC_DIR || "./dist/public";
