@@ -17,6 +17,6 @@ cp -r dist package.json bun.lockb "${BUILD_DIR}/"
 cd "${BUILD_DIR}" && bun install --production && cd ..
 
 # 3. Package into the exact filename deploy.sh will look for
-tar -czf "myapp-${VERSION}.tar.gz" -C "${BUILD_DIR}" .
+tar -czf "node-app-${VERSION}.tar.gz" -C "${BUILD_DIR}" .
 
-echo "Built artifact: myapp-${VERSION}.tar.gz"
+echo "Built artifact: node-app-${VERSION}.tar.gz"

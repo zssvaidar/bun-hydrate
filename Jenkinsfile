@@ -99,8 +99,8 @@ pipeline {
                         aws sts get-caller-identity
                         aws ec2 describe-instances --region ap-northeast-1 --output json
 
-                        aws s3 cp myapp-${version}.tar.gz \
-                            s3://${DEPLOY_BUCKET}/myapp-${version}.tar.gz \
+                        aws s3 cp node-app-${version}.tar.gz \
+                            s3://${DEPLOY_BUCKET}/node-app-${version}.tar.gz \
                             --region ap-northeast-1
 
                         aws s3 cp deploy.sh \

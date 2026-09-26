@@ -6,12 +6,12 @@ set -euo pipefail
 # symlink pointing at whichever one is live, and a systemd unit named after SERVICE_NAME whose
 # WorkingDirectory is that symlink - never a version path directly, so re-pointing it and
 # restarting the unit is a complete deploy. APP_USER/PORT/SERVICE_NAME below must keep matching
-# whatever that script actually creates (bunapp / 80 / myapp.service today).
+# whatever that script actually creates (bunapp / 80 / node-app.service today).
 
 VERSION="$1"
 APP_ROOT="/opt/app"
 APP_USER="bunapp"
-SERVICE_NAME="myapp"
+SERVICE_NAME="node-app"
 PORT=80
 RELEASES_DIR="${APP_ROOT}/releases"
 RELEASE_DIR="${RELEASES_DIR}/${VERSION}"
@@ -25,8 +25,8 @@ echo "Deploying version ${VERSION}..."
 
 # 1. Pull the artifact and extract into its own versioned directory
 mkdir -p "${RELEASE_DIR}"
-aws s3 cp "s3://${ARTIFACT_BUCKET}/myapp-${VERSION}.tar.gz" "/tmp/myapp-${VERSION}.tar.gz"
-tar -xzf "/tmp/myapp-${VERSION}.tar.gz" -C "${RELEASE_DIR}"
+aws s3 cp "s3://${ARTIFACT_BUCKET}/node-app-${VERSION}.tar.gz" "/tmp/node-app-${VERSION}.tar.gz"
+tar -xzf "/tmp/node-app-${VERSION}.tar.gz" -C "${RELEASE_DIR}"
 
 # 2. Sanity-check the release before it's ever symlinked live - a broken or empty artifact
 #    should fail here, not after the swap has already pointed "current" at it.
