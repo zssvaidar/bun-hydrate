@@ -47,7 +47,7 @@ pipeline {
         VAULT_ADDR      = 'http://192.168.0.26:8200'
         // matches the name run.sh instance-ami (cd-stack-gen/project-11) derives from
         // ROLE=testing-node-app ENV_TYPE=production: "${ROLE}-${ENV_TYPE}"
-        RESOURCE_GROUP_NAME = 'testing-node-app-production'
+        RESOURCE_GROUP_NAME = 'testing-node-app-bun'
     }
 
     stages {
