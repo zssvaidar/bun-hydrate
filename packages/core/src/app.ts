@@ -1,5 +1,17 @@
+import type { Server } from "bun";
 import { Context } from "./context";
 import { HttpError, MethodNotAllowedError, NotFoundError, toHttpError } from "./errors";
+import { healthHandler, readyHandler, type RegisteredCheck } from "./health";
+import {
+  Lifecycle,
+  type LifecycleState,
+  type ListenOptions,
+  type ReadinessCheck,
+  type ReadinessCheckOptions,
+  type StartHook,
+  type StopHook,
+  type StopOptions,
+} from "./lifecycle";
 import { createLogger, type Logger } from "./logger";
 import { compose } from "./middleware";
 import { REQUEST_ID_HEADER, resolveRequestId } from "./request-id";
@@ -25,23 +37,115 @@ export type ErrorHandler = (
 type RouteRunner = (ctx: Context) => Promise<Response>;
 type Dispatch = MatchResult<RouteRunner> | { kind: "error"; error: unknown };
 
+const SHUTDOWN_SIGNALS = ["SIGTERM", "SIGINT"] as const;
+const DEFAULT_READINESS_TIMEOUT_MS = 2_000;
+
 export class App extends Router {
   readonly logger: Logger;
+  /** The running Bun server, once `listen()` has bound it. */
+  server: Server<undefined> | undefined;
+
   private readonly exposeErrors: boolean;
   private readonly logRequests: boolean;
+  private readonly lifecycle: Lifecycle;
+  private readonly readinessChecks: RegisteredCheck[] = [];
   private errorHandler: ErrorHandler | undefined;
   private compiled: { revision: number; table: RouteTrie<RouteRunner> } | undefined;
+  private stopping: Promise<void> | undefined;
+  private readonly onSignal = () => void this.stop();
 
   constructor(options: AppOptions = {}) {
     super();
     this.logger = options.logger ?? createLogger();
     this.exposeErrors = options.exposeErrors ?? process.env.NODE_ENV === "development";
     this.logRequests = options.logRequests ?? true;
+    this.lifecycle = new Lifecycle(this.logger);
+
+    if (options.health ?? true) {
+      this.get("/health", healthHandler(Date.now()));
+      this.get("/ready", readyHandler(() => this.state, this.readinessChecks, this.logger));
+    }
+  }
+
+  get state(): LifecycleState {
+    return this.lifecycle.state;
   }
 
   onError(handler: ErrorHandler): this {
     this.errorHandler = handler;
     return this;
+  }
+
+  onStart(hook: StartHook): this {
+    this.lifecycle.onStart(hook);
+    return this;
+  }
+
+  onStop(hook: StopHook): this {
+    this.lifecycle.onStop(hook);
+    return this;
+  }
+
+  /** A dependency that must be healthy for `/ready` to report ready. */
+  readinessCheck(name: string, check: ReadinessCheck, options: ReadinessCheckOptions = {}): this {
+    this.readinessChecks.push({ name, check, timeoutMs: options.timeoutMs ?? DEFAULT_READINESS_TIMEOUT_MS });
+    return this;
+  }
+
+  /** Runs start hooks, then binds the server. Rejects (after cleaning up) if any step fails. */
+  async listen(options: ListenOptions = {}): Promise<Server<undefined>> {
+    if (this.state !== "created") throw new Error(`App is already ${this.state}; listen() can only be called once`);
+
+    await this.lifecycle.start();
+    try {
+      this.server = Bun.serve({
+        port: options.port ?? 3000,
+        hostname: options.hostname ?? "0.0.0.0",
+        fetch: this.fetch,
+      });
+    } catch (error) {
+      await this.lifecycle.runShutdownHooks();
+      this.lifecycle.state = "stopped";
+      throw error;
+    }
+
+    this.lifecycle.state = "running";
+    if (options.handleSignals ?? true) {
+      for (const signal of SHUTDOWN_SIGNALS) process.on(signal, this.onSignal);
+    }
+    this.logger.info("Server listening", { url: this.server.url.href });
+    return this.server;
+  }
+
+  /** Graceful shutdown (spec-3 §7). Safe to call more than once; every call returns the same promise. */
+  stop(options: StopOptions = {}): Promise<void> {
+    this.stopping ??= this.shutdown(options.timeoutMs ?? 10_000);
+    return this.stopping;
+  }
+
+  private async shutdown(timeoutMs: number): Promise<void> {
+    for (const signal of SHUTDOWN_SIGNALS) process.off(signal, this.onSignal);
+    if (this.state === "created" || this.state === "stopped") {
+      this.lifecycle.state = "stopped";
+      return;
+    }
+
+    this.lifecycle.state = "stopping";
+    this.logger.info("Shutting down");
+
+    if (this.server) {
+      const drained = this.server.stop().then(() => true);
+      const finishedInTime = await Promise.race([drained, Bun.sleep(timeoutMs).then(() => false)]);
+      if (!finishedInTime) {
+        this.logger.warn("Shutdown timeout reached; closing remaining connections", { timeoutMs });
+        // Not awaited: it only settles once every handler returns, and a hung handler never will.
+        void this.server.stop(true);
+      }
+    }
+
+    await this.lifecycle.runShutdownHooks();
+    this.lifecycle.state = "stopped";
+    this.logger.info("Stopped");
   }
 
   /** The web-standard entry point: `Bun.serve({ fetch: app.fetch })`, and what the test client calls. */

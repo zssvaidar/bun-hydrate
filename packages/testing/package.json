@@ -1,0 +1,13 @@
+{
+  "name": "@bun-hydrate/testing",
+  "version": "0.1.0",
+  "description": "In-process HTTP test client for bun-hydrate apps.",
+  "license": "MIT",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "peerDependencies": {
+    "@bun-hydrate/core": "workspace:*"
+  }
+}
