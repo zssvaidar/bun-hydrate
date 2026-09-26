@@ -17,6 +17,11 @@ mkdir -p "${RELEASE_DIR}"
 aws s3 cp "s3://${ARTIFACT_BUCKET}/myapp-${VERSION}.tar.gz" /tmp/myapp-${VERSION}.tar.gz
 tar -xzf /tmp/myapp-${VERSION}.tar.gz -C "${RELEASE_DIR}"
 
+# SSM runs this as root, but myapp.service runs the app as the unprivileged bunapp user
+# (see cd-stack-gen/project-11/ami-scripts/bun.sh) - without this it can't read/execute
+# what was just extracted.
+chown -R bunapp:bunapp "${RELEASE_DIR}"
+
 # 2. Remember what "current" points to right now, in case we need to roll back
 PREVIOUS_TARGET=$(readlink -f "${CURRENT_LINK}" 2>/dev/null || echo "")
 
@@ -32,7 +37,7 @@ sudo systemctl restart "${SERVICE_NAME}"
 
 # 5. Health check before declaring success
 sleep 5
-if curl -sf http://localhost:8080/health > /dev/null; then
+if curl -sf http://localhost:80/health > /dev/null; then
   echo "Deploy of ${VERSION} succeeded"
 else
   echo "Health check failed after deploying ${VERSION} — rolling back"

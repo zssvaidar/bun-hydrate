@@ -177,7 +177,7 @@ pipeline {
                               aws ssm send-command \
                                 --document-name "AWS-RunShellScript" \
                                 --targets "Key=resource-groups:Name,Values=${RESOURCE_GROUP_NAME}" \
-                                --parameters commands=["/opt/scripts/deploy.sh ${version}"] \
+                                --parameters commands=["ARTIFACT_BUCKET=${DEPLOY_BUCKET} /opt/scripts/deploy.sh ${version}"] \
                                 --output-s3-bucket-name my-deploy-logs-bucket1 \
                                 --query 'Command.CommandId' --output text
                             """,
