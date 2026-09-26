@@ -121,7 +121,7 @@ pipeline {
                     ],
                     vaultSecrets: [
                         [
-                            path: 'aws/creds/deploy-ssm-role',
+                            path: 'aws/creds/jenkins',
                             secretValues: [
                                 [envVar: 'AWS_ACCESS_KEY_ID', vaultKey: 'access_key'],
                                 [envVar: 'AWS_SECRET_ACCESS_KEY', vaultKey: 'secret_key'],
@@ -162,7 +162,7 @@ pipeline {
                     ],
                     vaultSecrets: [
                         [
-                            path: 'aws/creds/deploy-ssm-role',
+                            path: 'aws/creds/jenkins',
                             secretValues: [
                                 [envVar: 'AWS_ACCESS_KEY_ID', vaultKey: 'access_key'],
                                 [envVar: 'AWS_SECRET_ACCESS_KEY', vaultKey: 'secret_key'],
