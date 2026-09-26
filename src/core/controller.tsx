@@ -4,9 +4,15 @@ import {renderToReadableStream} from 'react-dom/server.browser'
 import PageHomeOne from 'app/packages/core/pages/PageHomeOne';
 import ProgramType from './types/ProgramType';
 
-const PORT = process.env.port || 3000;
-const HOST = process.env.host || "localhost";
-const protocol = process.env.protocol || "http";
+const PORT = process.env.PORT || 3000;
+const HOST = process.env.HOST || "localhost";
+
+const env = process.env.NODE_ENV || "http";
+
+let protocol = "http";
+if(env==='production') {
+  // protocol = 'https';
+}
 
 const startedAt = Date.now();
 
