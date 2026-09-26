@@ -1,0 +1,10 @@
+{
+  "name": "@bun-hydrate/core",
+  "version": "0.1.0",
+  "description": "Bun-native application kernel: app, router, context, middleware, errors, config, lifecycle.",
+  "license": "MIT",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  }
+}

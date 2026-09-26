@@ -1,23 +1,20 @@
 {
   "compilerOptions": {
-    "lib": [
-      "ESNext",
-      "dom"
-    ],
-    "baseUrl": "src",
-    "module": "esnext",
-    "target": "esnext", // esnext
-    "moduleResolution": "node",
-    "strict": false,
-    "downlevelIteration": true,
-    "skipLibCheck": true,
+    "lib": ["ESNext", "DOM", "DOM.Iterable"],
+    "target": "ESNext",
+    "module": "Preserve",
+    "moduleResolution": "bundler",
+    "moduleDetection": "force",
     "jsx": "react-jsx",
-    "allowSyntheticDefaultImports": true,
-    "forceConsistentCasingInFileNames": true,
-    "allowJs": true,
-    "types": [
-      "bun-types" // add Bun global
-    ],
+    "allowImportingTsExtensions": true,
+    "verbatimModuleSyntax": true,
+    "noEmit": true,
+    "strict": true,
+    "noUncheckedIndexedAccess": true,
+    "noFallthroughCasesInSwitch": true,
+    "noImplicitOverride": true,
+    "skipLibCheck": true,
+    "types": ["bun"]
   },
-  "include": ["src"],
+  "include": ["packages", "src", "tests", "hydrate.config.ts"]
 }
