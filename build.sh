@@ -8,7 +8,7 @@ echo "Building version ${VERSION}..."
 
 # 1. Install dependencies and bundle the server + client assets into dist/
 bun install
-bun run build
+bun run build --sourcemap
 
 # 2. Assemble only what actually needs to ship — not source, dev deps, tests, etc.
 rm -rf "${BUILD_DIR}"
