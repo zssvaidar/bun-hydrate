@@ -1,0 +1,16 @@
+{
+  "name": "@bun-hydrate/react",
+  "version": "0.1.0",
+  "description": "React server-side rendering and hydration for bun-hydrate.",
+  "license": "MIT",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./client": "./src/client.tsx"
+  },
+  "peerDependencies": {
+    "@bun-hydrate/core": "workspace:*",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0"
+  }
+}
