@@ -53,9 +53,14 @@ if curl -sf "http://localhost:${PORT}/health" > /dev/null; then
   echo "Deploy of ${VERSION} succeeded"
 else
   echo "Health check failed after deploying ${VERSION} — rolling back"
-  if [ -n "${PREVIOUS_TARGET}" ]; then
+  # readlink -f on a not-yet-existing CURRENT_LINK prints the path itself rather than failing
+  # (only components before the last are required to exist) - guard against rolling back to
+  # ourselves when there was no previous release to fall back to (e.g. the very first deploy).
+  if [ -n "${PREVIOUS_TARGET}" ] && [ -d "${PREVIOUS_TARGET}" ] && [ "${PREVIOUS_TARGET}" != "${RELEASE_DIR}" ]; then
     ln -sfn "${PREVIOUS_TARGET}" "${CURRENT_LINK}"
     sudo systemctl restart "${SERVICE_NAME}"
+  else
+    echo "no previous release to roll back to - ${CURRENT_LINK} left pointing at the failed release ${VERSION} for debugging"
   fi
   exit 1
 fi
