@@ -29,8 +29,10 @@ aws s3 cp "s3://${ARTIFACT_BUCKET}/node-app-${VERSION}.tar.gz" "/tmp/node-app-${
 tar -xzf "/tmp/node-app-${VERSION}.tar.gz" -C "${RELEASE_DIR}"
 
 # 2. Sanity-check the release before it's ever symlinked live - a broken or empty artifact
-#    should fail here, not after the swap has already pointed "current" at it.
-[ -f "${RELEASE_DIR}/index.ts" ] || { echo "index.ts missing from extracted release ${VERSION} - not deploying" >&2; exit 1; }
+#    should fail here, not after the swap has already pointed "current" at it. dist/index.js
+#    is what `bun run build` (scripts/build.ts) actually emits, matching what
+#    ami-scripts/bun.sh's systemd unit runs.
+[ -f "${RELEASE_DIR}/dist/index.js" ] || { echo "dist/index.js missing from extracted release ${VERSION} - not deploying" >&2; exit 1; }
 
 # SSM runs this as root, but ${SERVICE_NAME}.service runs the app as the unprivileged
 # ${APP_USER} - without this it can't read/execute what was just extracted.
