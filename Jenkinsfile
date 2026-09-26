@@ -139,7 +139,7 @@ pipeline {
                                 --document-name "AWS-RunShellScript" \
                                 --targets "Key=resource-groups:Name,Values=${RESOURCE_GROUP_NAME}" \
                                 --parameters commands=["mkdir -p /opt/scripts","aws s3 cp s3://${DEPLOY_BUCKET}/scripts/deploy.sh /opt/scripts/deploy.sh --region ${AWS_REGION}","chmod +x /opt/scripts/deploy.sh"] \
-                                --output-s3-bucket-name my-deploy-logs-bucket \
+                                --output-s3-bucket-name my-deploy-logs-bucket1 \
                                 --query 'Command.CommandId' --output text
                             """,
                             returnStdout: true
@@ -178,7 +178,7 @@ pipeline {
                                 --document-name "AWS-RunShellScript" \
                                 --targets "Key=resource-groups:Name,Values=${RESOURCE_GROUP_NAME}" \
                                 --parameters commands=["/opt/scripts/deploy.sh ${version}"] \
-                                --output-s3-bucket-name my-deploy-logs-bucket \
+                                --output-s3-bucket-name my-deploy-logs-bucket1 \
                                 --query 'Command.CommandId' --output text
                             """,
                             returnStdout: true
@@ -194,7 +194,7 @@ pipeline {
 
     post {
         failure {
-            echo "Deployment failed — check SSM output in S3 (my-deploy-logs-bucket) or per-instance rollback status"
+            echo "Deployment failed — check SSM output in S3 (my-deploy-logs-bucket1) or per-instance rollback status"
         }
         success {
             echo "Deployed version ${BUILD_VERSION} to all app-server instances"
