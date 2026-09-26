@@ -6,11 +6,11 @@ set -euo pipefail
 # symlink pointing at whichever one is live, and a systemd unit named after SERVICE_NAME whose
 # WorkingDirectory is that symlink - never a version path directly, so re-pointing it and
 # restarting the unit is a complete deploy. APP_USER/PORT/SERVICE_NAME below must keep matching
-# whatever that script actually creates (bunapp / 80 / node-app.service today).
+# whatever that script actually creates (nodeapp / 80 / node-app.service today).
 
 VERSION="$1"
 APP_ROOT="/opt/app"
-APP_USER="bunapp"
+APP_USER="nodeapp"
 SERVICE_NAME="node-app"
 PORT=80
 RELEASES_DIR="${APP_ROOT}/releases"
