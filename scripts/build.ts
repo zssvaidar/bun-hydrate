@@ -11,6 +11,7 @@ const PUBLIC_DIR = `${DIST_DIR}/public`;
 // being inlined, so the deploy target just needs `bun install --production`.
 const EXTERNAL_DEPENDENCIES = [
   "react",
+  "react/*", // covers react/jsx-runtime and react/jsx-dev-runtime, not just the bare package
   "react-dom",
   "react-dom/*",
   "react-router-dom",
