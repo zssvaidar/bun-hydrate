@@ -30,8 +30,10 @@ tar -xzf "/tmp/node-app-${VERSION}.tar.gz" -C "${RELEASE_DIR}"
 
 # 2. Sanity-check the release before it's ever symlinked live - a broken or empty artifact
 #    should fail here, not after the swap has already pointed "current" at it. dist/index.js
-#    is what `bun run build` (scripts/build.ts) actually emits, matching what
-#    ami-scripts/bun.sh's systemd unit runs.
+#    is what `bun run build` (scripts/build.ts) actually emits, and what
+#    ami-scripts/bun.sh's systemd unit's ExecStart runs - a flat index.ts/index.js at the
+#    release root (no dist/) would pass a looser check but still fail at `systemctl restart`,
+#    since that's not the path the unit actually executes.
 [ -f "${RELEASE_DIR}/dist/index.js" ] || { echo "dist/index.js missing from extracted release ${VERSION} - not deploying" >&2; exit 1; }
 
 # SSM runs this as root, but ${SERVICE_NAME}.service runs the app as the unprivileged
