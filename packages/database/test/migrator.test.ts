@@ -126,6 +126,16 @@ describe.each(engines)("Migrator on $name", ({ name, open }) => {
     expect(await tableExists("mig_users")).toBe(true);
   });
 
+  test("sections holding only comments are deliberate no-ops, both ways", async () => {
+    await write(
+      "20260101000000_noted.sql",
+      "-- migrate:up\n-- tables kept on purpose\n/* nothing to do */\n\n-- migrate:down\n-- nothing to undo\n",
+    );
+
+    expect(await migrator.migrate()).toEqual(["20260101000000_noted"]);
+    expect(await migrator.rollback()).toEqual(["20260101000000_noted"]);
+  });
+
   test("create() writes a timestamped template with a safe name", async () => {
     const created = new Migrator({ db, directory, now: () => new Date("2026-09-27T08:05:03Z") });
 

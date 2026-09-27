@@ -62,6 +62,14 @@ export function parseMigration(name: string, text: string): ParsedMigration {
   return { up: upSql, down: downSql === "" ? undefined : downSql };
 }
 
+/**
+ * False for a section holding only comments, which is how a migration says "nothing to do on
+ * purpose" (SQLite rejects a query with no statements).
+ */
+function hasStatements(sql: string): boolean {
+  return sql.replace(/\/\*[\s\S]*?\*\//g, "").replace(/--.*$/gm, "").trim() !== "";
+}
+
 /** Plain-SQL migrations tracked in `hydrate_migrations` (spec-4 §4.4). */
 export class Migrator {
   private readonly db: Database;
@@ -89,7 +97,7 @@ export class Migrator {
       for (const name of pending) {
         const { up } = parseMigration(name, await this.read(name));
         await this.run(name, async () => {
-          if (up) await this.db.sql.unsafe(up);
+          if (hasStatements(up)) await this.db.sql.unsafe(up);
           await this.db.sql`insert into ${this.db.sql(TABLE)} ${this.db.sql({
             name,
             batch,
@@ -115,7 +123,7 @@ export class Migrator {
         const { down } = parseMigration(name, await this.read(name));
         if (!down) throw new Error(`Migration ${name} has no \`-- migrate:down\` section and cannot be rolled back`);
         await this.run(name, async () => {
-          await this.db.sql.unsafe(down);
+          if (hasStatements(down)) await this.db.sql.unsafe(down);
           await this.db.sql`delete from ${this.db.sql(TABLE)} where name = ${name}`;
         });
       }
