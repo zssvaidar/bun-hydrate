@@ -29,6 +29,7 @@ import {
   type WebSocketOptions,
 } from "./websocket";
 import { securityHeaders, type SecurityHeadersOptions } from "./security-headers";
+import type { PubSub, PubSubMessage } from "./pubsub";
 import { childTrace, parseTraceparent, runWithTrace } from "./trace";
 
 export interface AppOptions {
@@ -45,6 +46,8 @@ export interface AppOptions {
   securityHeaders?: SecurityHeadersOptions | false;
   /** WebSocket limits and allowed origins (spec-5 §1.5). */
   websocket?: WebSocketOptions;
+  /** Carries app.publish() to every instance (spec-6 §9). Default: this process only. */
+  pubsub?: PubSub;
 }
 
 /** What `fetch` needs from Bun's server: the socket address of the peer. */
@@ -82,6 +85,9 @@ export class App extends Router {
   private stopping: Promise<void> | undefined;
   private readonly onSignal = () => void this.stop();
   private readonly websocketOptions: WebSocketOptions;
+  private readonly pubsub: PubSub | undefined;
+  private unsubscribePubSub: (() => Promise<void>) | undefined;
+  private readonly drainHooks: StopHook[] = [];
   private readonly sockets = new Set<ServerWebSocket<object>>();
   /** Per request: the server able to upgrade it (only set by handle(), never by fetch()). */
   private readonly upgraders = new WeakMap<Context<unknown>, UpgradeCapable>();
@@ -97,6 +103,7 @@ export class App extends Router {
     this.lifecycle = new Lifecycle(this.logger);
     this.trustProxy = options.trustProxy ?? false;
     this.websocketOptions = options.websocket ?? {};
+    this.pubsub = options.pubsub;
     this.isTrustedProxy = Array.isArray(this.trustProxy) ? ipMatcher(this.trustProxy) : undefined;
 
     if (options.securityHeaders !== false) this.use(securityHeaders(options.securityHeaders ?? {}));
@@ -118,6 +125,15 @@ export class App extends Router {
 
   onStart(hook: StartHook): this {
     this.lifecycle.onStart(hook);
+    return this;
+  }
+
+  /**
+   * Runs during shutdown after in-flight requests have drained, before the pub/sub unsubscribes
+   * and stop hooks close connections (spec-6 §11): e.g. `events.idle()`, flushing buffers.
+   */
+  onDrain(hook: StopHook): this {
+    this.drainHooks.push(hook);
     return this;
   }
 
@@ -148,6 +164,11 @@ export class App extends Router {
       await this.lifecycle.runShutdownHooks();
       this.lifecycle.state = "stopped";
       throw error;
+    }
+
+    if (this.pubsub) {
+      const server = this.server;
+      this.unsubscribePubSub = await this.pubsub.subscribe((topic, message) => void server.publish(topic, message));
     }
 
     this.lifecycle.state = "running";
@@ -194,6 +215,15 @@ export class App extends Router {
       }
     }
 
+    // Phases 3–5 (spec-6 §11): drain hooks, stop receiving messages, then close connections.
+    for (const hook of this.drainHooks) {
+      try {
+        await hook();
+      } catch (error) {
+        this.logger.error("A drain hook failed during shutdown", { error });
+      }
+    }
+    await this.unsubscribePubSub?.().catch((error) => this.logger.error("Unsubscribing from pub/sub failed", { error }));
     await this.lifecycle.runShutdownHooks();
     this.lifecycle.state = "stopped";
     this.logger.info("Stopped");
@@ -243,9 +273,13 @@ export class App extends Router {
     });
   }
 
-  /** Publishes to a topic's subscribers in this process; returns bytes sent (0 when not listening). */
-  publish(topic: string, message: string | ArrayBufferLike | Uint8Array): number {
-    return this.server?.publish(topic, message as string) ?? 0;
+  /**
+   * Publishes to a topic's WebSocket subscribers: on every instance with a `pubsub` adapter
+   * (spec-6 §9), otherwise in this process. At most once: messages are not stored.
+   */
+  async publish(topic: string, message: PubSubMessage): Promise<void> {
+    if (this.pubsub) await this.pubsub.publish(topic, message);
+    else this.server?.publish(topic, message);
   }
 
   private async dispatch(

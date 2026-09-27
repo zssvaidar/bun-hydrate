@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { connectWebSocket } from "@bun-hydrate/testing";
 import { App, type AppOptions } from "../src/app";
+import { memoryPubSub, type PubSub } from "../src/pubsub";
 import { UnauthorizedError } from "../src/errors";
 import { createLogger } from "../src/logger";
 
@@ -36,7 +37,10 @@ async function startApp(options: AppOptions = {}) {
         ws.publish(`room:${ws.data.room}`, `${ws.data.user}: ${message}`);
       },
     })
-    .post("/announce/:room", (ctx) => ({ delivered: app.publish(`room:${ctx.params.room}`, "announcement") }));
+    .post("/announce/:room", async (ctx) => {
+      await app.publish(`room:${ctx.params.room}`, "announcement");
+      return { published: true };
+    });
   apps.push(app);
   const server = await app.listen({ port: 0, hostname: "127.0.0.1", handleSignals: false });
   const wsUrl = (path: string) => `ws://127.0.0.1:${server.port}${path}`;
@@ -77,7 +81,7 @@ describe("app.websocket()", () => {
     expect(await bob.next()).toBe("alice: hi");
 
     const res = await fetch(httpUrl("/announce/lobby"), { method: "POST" });
-    expect(await res.json()).toEqual({ delivered: expect.any(Number) });
+    expect(await res.json()).toEqual({ published: true });
     expect(await alice.next()).toBe("announcement");
     expect(await bob.next()).toBe("announcement");
     await Promise.all([alice.close(), bob.close()]);
@@ -191,5 +195,74 @@ describe("app.websocket()", () => {
         void [id, joinedAt];
       },
     });
+  });
+});
+
+describe("fan-out through a PubSub adapter (spec-6 §9)", () => {
+  test("app.publish() reaches subscribers connected to another instance, and to this one", async () => {
+    const hub = memoryPubSub();
+    const a = await startApp({ pubsub: hub });
+    const b = await startApp({ pubsub: hub });
+    const onB = await connectWebSocket(b.wsUrl("/ws/rooms/lobby"), { headers: { "x-user": "bob" } });
+    const onA = await connectWebSocket(a.wsUrl("/ws/rooms/lobby"), { headers: { "x-user": "ann" } });
+    await onB.next();
+    await onA.next(); // welcomes
+
+    await a.app.publish("room:lobby", "hello everyone");
+    expect(await onB.next()).toBe("hello everyone");
+    expect(await onA.next()).toBe("hello everyone");
+    await Promise.all([onA.close(), onB.close()]);
+  });
+
+  test("without an adapter, app.publish() stays in this process", async () => {
+    const { app, wsUrl } = await startApp();
+    const client = await connectWebSocket(wsUrl("/ws/rooms/lobby"), { headers: { "x-user": "ann" } });
+    await client.next();
+    await app.publish("room:lobby", "local only");
+    expect(await client.next()).toBe("local only");
+    await client.close();
+  });
+
+  test("binary messages survive the trip", async () => {
+    const hub = memoryPubSub();
+    const a = await startApp({ pubsub: hub });
+    const b = await startApp({ pubsub: hub });
+    const client = await connectWebSocket(b.wsUrl("/ws/rooms/bin"), { headers: { "x-user": "bob" } });
+    client.raw.binaryType = "arraybuffer";
+    await client.next();
+    await a.app.publish("room:bin", new Uint8Array([1, 2, 255]));
+    expect([...new Uint8Array((await client.next()) as ArrayBuffer)]).toEqual([1, 2, 255]);
+    await client.close();
+  });
+});
+
+describe("shutdown phases (spec-6 §11)", () => {
+  test("HTTP drains, then onDrain hooks, then the pub/sub unsubscribes, then stop hooks", async () => {
+    const order: string[] = [];
+    const hub = memoryPubSub();
+    const pubsub: PubSub = {
+      publish: (topic, message) => hub.publish(topic, message),
+      subscribe: async (deliver) => {
+        const unsubscribe = await hub.subscribe(deliver);
+        return async () => {
+          order.push("pubsub unsubscribed");
+          await unsubscribe();
+        };
+      },
+    };
+    const { app, httpUrl } = await startApp({ pubsub });
+    app.get("/slow", async () => {
+      await Bun.sleep(30);
+      order.push("request finished");
+      return "done";
+    });
+    app.onDrain(() => void order.push("drain hook"));
+    app.onStop(() => void order.push("stop hook"));
+
+    const slow = fetch(httpUrl("/slow"));
+    await Bun.sleep(5);
+    await app.stop();
+    await slow;
+    expect(order).toEqual(["request finished", "drain hook", "pubsub unsubscribed", "stop hook"]);
   });
 });
