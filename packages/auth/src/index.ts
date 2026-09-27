@@ -18,3 +18,13 @@ export {
   type Strategy,
   type AuthenticateOptions,
 } from "./authenticate";
+export { csrf, type CsrfOptions } from "./csrf";
+export { SessionManager, type SessionManagerOptions } from "./sessions/manager";
+export {
+  DatabaseSessionStore,
+  CacheSessionStore,
+  SESSIONS_MIGRATION,
+  type SessionStore,
+  type SessionRecord,
+} from "./sessions/store";
+export { randomToken, sha256Hex } from "./tokens";
