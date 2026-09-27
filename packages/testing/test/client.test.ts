@@ -62,3 +62,41 @@ describe("createTestClient", () => {
     expect(await res.text()).toBe("/raw");
   });
 });
+
+describe("v0.3 client helpers", () => {
+  function sessionApp() {
+    return new App({ logger: createLogger({ level: "silent" }), health: false, securityHeaders: false })
+      .post("/login", (ctx) => {
+        ctx.cookies.set("sid", "abc");
+        return "in";
+      })
+      .post("/logout", (ctx) => {
+        ctx.cookies.delete("sid");
+        return "out";
+      })
+      .get("/whoami", (ctx) => ({ sid: ctx.cookies.get("sid"), ip: ctx.ip, auth: ctx.headers.get("authorization") }));
+  }
+
+  test("cookies: true keeps a cookie jar across requests, honouring deletion", async () => {
+    const client = createTestClient(sessionApp(), { cookies: true });
+
+    await client.post("/login");
+    expect((await (await client.get("/whoami")).json()).sid).toBe("abc");
+    expect(client.cookies.get("sid")).toBe("abc");
+
+    await client.post("/logout");
+    expect((await (await client.get("/whoami")).json()).sid).toBeNull();
+    expect(client.cookies.get("sid")).toBeUndefined();
+  });
+
+  test("without a jar, cookies are not remembered", async () => {
+    const client = createTestClient(sessionApp());
+    await client.post("/login");
+    expect((await (await client.get("/whoami")).json()).sid).toBeNull();
+  });
+
+  test(".ip() sets the client address and .bearer() the Authorization header", async () => {
+    const body = await (await createTestClient(sessionApp()).get("/whoami").ip("203.0.113.9").bearer("t0k")).json();
+    expect(body).toMatchObject({ ip: "203.0.113.9", auth: "Bearer t0k" });
+  });
+});

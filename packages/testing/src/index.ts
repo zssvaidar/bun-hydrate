@@ -1,6 +1,11 @@
 export { spawnServer, type RunningServer, type SpawnServerOptions } from "./spawn";
+export { connectWebSocket, type TestWebSocket, type ConnectOptions } from "./websocket";
 
-type FetchHandler =(request: Request) => Response | Promise<Response>;
+/** What the app's fetch receives as its second argument: a stand-in for Bun's server. */
+interface PeerSource {
+  requestIP(request: Request): { address: string } | null;
+}
+type FetchHandler = (request: Request, server?: PeerSource) => Response | undefined | Promise<Response | undefined>;
 export type TestTarget = FetchHandler | { fetch: FetchHandler };
 
 export interface TestClientOptions {
@@ -8,6 +13,46 @@ export interface TestClientOptions {
   baseUrl?: string;
   /** Headers sent with every request. */
   headers?: HeadersInit;
+  /** Keep cookies from Set-Cookie and send them on later requests, like a browser. */
+  cookies?: boolean;
+}
+
+/** A minimal browser-like cookie jar: honours Max-Age/Expires deletion, ignores paths and domains. */
+export class CookieJar {
+  private readonly values = new Map<string, string>();
+
+  get(name: string): string | undefined {
+    return this.values.get(name);
+  }
+
+  set(name: string, value: string): void {
+    this.values.set(name, value);
+  }
+
+  clear(): void {
+    this.values.clear();
+  }
+
+  /** @internal */
+  header(): string | undefined {
+    return this.values.size === 0 ? undefined : [...this.values].map(([name, value]) => `${name}=${value}`).join("; ");
+  }
+
+  /** @internal */
+  store(setCookie: string[]): void {
+    for (const cookie of setCookie) {
+      const [pair = "", ...attributes] = cookie.split(";").map((part) => part.trim());
+      const separator = pair.indexOf("=");
+      const name = pair.slice(0, separator);
+      const value = pair.slice(separator + 1);
+      const maxAge = attributes.find((a) => /^max-age=/i.test(a))?.split("=")[1];
+      const expires = attributes.find((a) => /^expires=/i.test(a))?.slice("expires=".length);
+      const expired =
+        (maxAge !== undefined && Number(maxAge) <= 0) || (expires !== undefined && Date.parse(expires) <= Date.now());
+      if (expired || value === "") this.values.delete(name);
+      else this.values.set(name, value);
+    }
+  }
 }
 
 type QueryValue = string | number | boolean;
@@ -21,15 +66,27 @@ export class TestRequest implements PromiseLike<Response> {
   private readonly url: URL;
   private body: BodyInit | undefined;
   private sent: Promise<Response> | undefined;
+  private clientIp: string | undefined;
 
   constructor(
     private readonly handler: FetchHandler,
     private readonly method: string,
     url: URL,
     defaultHeaders: HeadersInit | undefined,
+    private readonly jar: CookieJar | undefined,
   ) {
     this.url = url;
     this.headers = new Headers(defaultHeaders);
+  }
+
+  /** The client address the app sees (as if from the socket). */
+  ip(address: string): this {
+    this.clientIp = address;
+    return this;
+  }
+
+  bearer(token: string): this {
+    return this.header("authorization", `Bearer ${token}`);
   }
 
   header(name: string, value: string): this {
@@ -61,9 +118,19 @@ export class TestRequest implements PromiseLike<Response> {
   }
 
   send(): Promise<Response> {
-    this.sent ??= Promise.resolve().then(() =>
-      this.handler(new Request(this.url, { method: this.method, headers: this.headers, body: this.body })),
-    );
+    this.sent ??= Promise.resolve().then(async () => {
+      const jarCookies = this.jar?.header();
+      if (jarCookies && !this.headers.has("cookie")) this.headers.set("cookie", jarCookies);
+
+      const peer = this.clientIp ? { requestIP: () => ({ address: this.clientIp! }) } : undefined;
+      const response = await this.handler(
+        new Request(this.url, { method: this.method, headers: this.headers, body: this.body }),
+        peer,
+      );
+      if (!response) throw new Error("The app returned no response (WebSocket upgrades need a real server)");
+      this.jar?.store(response.headers.getSetCookie());
+      return response;
+    });
     return this.sent;
   }
 
@@ -84,13 +151,16 @@ export interface TestClient {
   head(path: string): TestRequest;
   options(path: string): TestRequest;
   request(method: string, path: string): TestRequest;
+  /** Present when created with `{ cookies: true }`. */
+  cookies: CookieJar;
 }
 
 export function createTestClient(target: TestTarget, options: TestClientOptions = {}): TestClient {
-  const handler: FetchHandler = typeof target === "function" ? target : (request) => target.fetch(request);
+  const handler: FetchHandler = typeof target === "function" ? target : (request, peer) => target.fetch(request, peer);
   const baseUrl = options.baseUrl ?? "http://localhost";
+  const jar = new CookieJar();
   const request = (method: string, path: string) =>
-    new TestRequest(handler, method, new URL(path, baseUrl), options.headers);
+    new TestRequest(handler, method, new URL(path, baseUrl), options.headers, options.cookies ? jar : undefined);
 
   return {
     get: (path) => request("GET", path),
@@ -101,5 +171,6 @@ export function createTestClient(target: TestTarget, options: TestClientOptions 
     head: (path) => request("HEAD", path),
     options: (path) => request("OPTIONS", path),
     request,
+    cookies: jar,
   };
 }

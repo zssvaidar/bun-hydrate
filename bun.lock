@@ -96,6 +96,7 @@
       "name": "@bun-hydrate/testing",
       "version": "0.1.0",
       "peerDependencies": {
+        "@bun-hydrate/auth": "workspace:*",
         "@bun-hydrate/core": "workspace:*",
         "@bun-hydrate/database": "workspace:*",
       },
