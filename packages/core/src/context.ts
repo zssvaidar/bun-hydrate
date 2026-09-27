@@ -1,6 +1,7 @@
 import type { BunFile } from "bun";
 import { Cookies } from "./cookies";
 import { BadRequestError, NotFoundError } from "./errors";
+import { randomHex } from "./trace";
 import type { Logger } from "./logger";
 
 /**
@@ -56,6 +57,7 @@ export interface ContextInit<Params> {
   ip?: string;
   protocol?: "http" | "https";
   route?: string;
+  trace?: { traceId: string; spanId: string; flags: string };
 }
 
 export class Context<Params = Record<string, string>> {
@@ -76,6 +78,10 @@ export class Context<Params = Record<string, string>> {
   /** The matched route pattern, e.g. "/users/:id"; undefined when nothing matched. */
   readonly route: string | undefined;
   readonly cookies: Cookies;
+  /** W3C trace context (spec-5 §1.4): continued from `traceparent`, or started here. */
+  readonly traceId: string;
+  readonly spanId: string;
+  readonly traceFlags: string;
 
   private pendingStatus: number | undefined;
   private readonly pendingHeaders = new Headers();
@@ -95,6 +101,9 @@ export class Context<Params = Record<string, string>> {
     this.protocol = init.protocol ?? (this.url.protocol === "https:" ? "https" : "http");
     this.route = init.route;
     this.cookies = new Cookies(request.headers.get("cookie"), this.protocol === "https");
+    this.traceId = init.trace?.traceId ?? randomHex(16);
+    this.spanId = init.trace?.spanId ?? randomHex(8);
+    this.traceFlags = init.trace?.flags ?? "01";
   }
 
   /** Sets the status used by the response builders and by plain return values. */

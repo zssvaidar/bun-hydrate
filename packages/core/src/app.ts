@@ -19,6 +19,8 @@ import { REQUEST_ID_HEADER, resolveRequestId } from "./request-id";
 import { appendHeader, toResponse, withHeader, withoutBody } from "./response";
 import { RouteTrie, type MatchResult } from "./route-trie";
 import { Router } from "./router";
+import { securityHeaders, type SecurityHeadersOptions } from "./security-headers";
+import { parseTraceparent, randomHex } from "./trace";
 
 export interface AppOptions {
   logger?: Logger;
@@ -30,6 +32,8 @@ export interface AppOptions {
   health?: boolean;
   /** Which proxies may report the client address and protocol (spec-5 §1.1). Default: false. */
   trustProxy?: TrustProxy;
+  /** Baseline security headers (spec-5 §2.1): on by default; pass overrides, or false to turn off. */
+  securityHeaders?: SecurityHeadersOptions | false;
 }
 
 /** What `fetch` needs from Bun's server: the socket address of the peer. */
@@ -75,6 +79,8 @@ export class App extends Router {
     this.lifecycle = new Lifecycle(this.logger);
     this.trustProxy = options.trustProxy ?? false;
     this.isTrustedProxy = Array.isArray(this.trustProxy) ? ipMatcher(this.trustProxy) : undefined;
+
+    if (options.securityHeaders !== false) this.use(securityHeaders(options.securityHeaders ?? {}));
 
     if (options.health ?? true) {
       this.get("/health", healthHandler(Date.now()));
@@ -175,11 +181,14 @@ export class App extends Router {
     const requestId = resolveRequestId(request.headers.get(REQUEST_ID_HEADER));
     const dispatch = this.match(request);
     const client = resolveClient(request, server?.requestIP(request)?.address, this.trustProxy, this.isTrustedProxy);
+    const parent = parseTraceparent(request.headers.get("traceparent"));
+    const trace = { traceId: parent?.traceId ?? randomHex(16), spanId: randomHex(8), flags: parent?.flags ?? "01" };
     const ctx = new Context(request, {
       params: dispatch.kind === "found" ? dispatch.params : {},
       route: dispatch.kind === "found" ? dispatch.value.pattern : undefined,
       requestId,
-      log: this.logger.child({ requestId }),
+      log: this.logger.child({ requestId, traceId: trace.traceId }),
+      trace,
       ...client,
     });
 

@@ -1,6 +1,9 @@
 export { App, type AppOptions, type ErrorHandler, type PeerSource } from "./app";
 export { ipMatcher, resolveClient, type TrustProxy, type ClientInfo } from "./client-ip";
 export { Cookies, type CookieOptions } from "./cookies";
+export { cors, type CorsOptions } from "./cors";
+export { securityHeaders, DEFAULT_CSP, type SecurityHeadersOptions } from "./security-headers";
+export { parseTraceparent, propagationHeaders, type TraceParent } from "./trace";
 export { Router, joinPaths, type Handler, type PathParams, type RouteDefinition } from "./router";
 export { Context, RequestBody, type ContextState, type RedirectStatus } from "./context";
 export { compose, type Middleware, type Next } from "./middleware";
