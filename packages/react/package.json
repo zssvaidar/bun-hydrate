@@ -6,11 +6,13 @@
   "type": "module",
   "exports": {
     ".": "./src/index.ts",
-    "./client": "./src/client.tsx"
+    "./client": "./src/client.tsx",
+    "./auth": "./src/auth.tsx"
   },
   "peerDependencies": {
     "@bun-hydrate/core": "workspace:*",
     "react": "^19.0.0",
-    "react-dom": "^19.0.0"
+    "react-dom": "^19.0.0",
+    "@bun-hydrate/auth": "workspace:*"
   }
 }

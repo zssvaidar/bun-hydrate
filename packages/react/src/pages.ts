@@ -5,10 +5,14 @@ export type PageRegistry = Record<string, ComponentType<any>>;
 export type PageName<Pages extends PageRegistry> = keyof Pages & string;
 export type PageProps<Pages extends PageRegistry, Name extends PageName<Pages>> = ComponentProps<Pages[Name]>;
 
+/** Per-request data shared by every page, e.g. `{ auth: AuthSnapshot }`. */
+export type SharedData = Record<string, unknown>;
+
 /** What the server embeds in the document so the client knows what to hydrate. */
 export interface HydrationPayload {
   page: string;
   props: unknown;
+  shared?: SharedData;
 }
 
 export const APP_ROOT_ID = "app";

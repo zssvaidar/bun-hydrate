@@ -58,3 +58,4 @@ export {
   type ApiKeyStrategyOptions,
 } from "./api-keys";
 export { oidcStrategy, type OidcStrategyOptions } from "./oidc";
+export { authSnapshot, type AuthSnapshot, type SnapshotOptions } from "./snapshot";

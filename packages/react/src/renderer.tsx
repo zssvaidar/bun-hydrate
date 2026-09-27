@@ -1,7 +1,8 @@
-import { createElement } from "react";
+import { createElement, type ReactElement } from "react";
+import type { Context } from "@bun-hydrate/core";
 import { renderToReadableStream } from "react-dom/server";
 import { documentShell } from "./document";
-import type { PageName, PageProps, PageRegistry } from "./pages";
+import type { PageName, PageProps, PageRegistry, SharedData } from "./pages";
 
 export interface RendererOptions<Pages extends PageRegistry> {
   pages: Pages;
@@ -11,11 +12,17 @@ export interface RendererOptions<Pages extends PageRegistry> {
   defaultTitle?: string;
   /** Called for errors React recovers from (e.g. inside Suspense boundaries). Default: console.error. */
   onError?: (error: unknown) => void;
+  /** Per-request data every page gets (e.g. the auth snapshot), embedded in the payload when `ctx` is passed. */
+  shared?: (ctx: Context<any>) => SharedData | Promise<SharedData>;
+  /** Wraps every page (e.g. in providers). hydratePage must use the same wrap so hydration matches. */
+  wrap?: (page: ReactElement, shared: SharedData) => ReactElement;
 }
 
 export interface RenderOptions {
   title?: string;
   status?: number;
+  /** The request, so `shared(ctx)` can run. */
+  ctx?: Context<any>;
 }
 
 export interface ReactRenderer<Pages extends PageRegistry> {
@@ -29,19 +36,23 @@ export interface ReactRenderer<Pages extends PageRegistry> {
 const encoder = new TextEncoder();
 
 export function createReactRenderer<Pages extends PageRegistry>(options: RendererOptions<Pages>): ReactRenderer<Pages> {
-  const { pages, assets, lang = "en", defaultTitle = "", onError = console.error } = options;
+  const { pages, assets, lang = "en", defaultTitle = "", onError = console.error, shared, wrap } = options;
 
   return {
     async render(name, props, renderOptions = {}) {
       const Page = pages[name];
       if (!Page) throw new Error(`Unknown page "${name}". Register it with definePages().`);
 
+      const sharedData = renderOptions.ctx && shared ? await shared(renderOptions.ctx) : undefined;
+      const page = createElement(Page, props);
+      const element = wrap ? wrap(page, sharedData ?? {}) : page;
+
       // Rejects if the shell cannot render, which the app turns into a normal 500.
-      const body = await renderToReadableStream(createElement(Page, props), { onError });
+      const body = await renderToReadableStream(element, { onError });
       const { head, tail } = documentShell({
         title: renderOptions.title ?? defaultTitle,
         lang,
-        payload: { page: name, props },
+        payload: sharedData === undefined ? { page: name, props } : { page: name, props, shared: sharedData },
         scripts: assets.scripts,
       });
 

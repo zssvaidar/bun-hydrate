@@ -78,3 +78,47 @@ describe("createReactRenderer", () => {
     void (() => react.render("Greeting", { name: 1, items: [] }));
   });
 });
+
+describe("shared per-request data (spec-5 §8.1)", () => {
+  function createApp() {
+    const react = createReactRenderer({
+      pages,
+      assets,
+      onError: () => {},
+      shared: (ctx) => ({ auth: { user: ctx.headers.get("x-user") ? { id: ctx.headers.get("x-user") } : null, permissions: [] } }),
+    });
+    const app = new App({ logger: createLogger({ level: "silent" }), health: false })
+      .get("/with-ctx", (ctx) => react.render("Greeting", { name: "x", items: [] }, { ctx }))
+      .get("/without-ctx", () => react.render("Greeting", { name: "x", items: [] }));
+    return createTestClient(app);
+  }
+
+  test("render(…, { ctx }) adds the shared data to the payload", async () => {
+    const html = await (await createApp().get("/with-ctx").header("x-user", "u1")).text();
+    expect(payloadOf(html)).toEqual({
+      page: "Greeting",
+      props: { name: "x", items: [] },
+      shared: { auth: { user: { id: "u1" }, permissions: [] } },
+    });
+  });
+
+  test("without ctx the payload is unchanged", async () => {
+    const html = await (await createApp().get("/without-ctx")).text();
+    expect(payloadOf(html)).toEqual({ page: "Greeting", props: { name: "x", items: [] } });
+  });
+
+  test("wrap(page, shared) wraps the server render too, so hydration matches", async () => {
+    const react = createReactRenderer({
+      pages,
+      assets,
+      shared: () => ({ theme: "dark" }),
+      wrap: (page, shared) => <div data-theme={String(shared.theme)}>{page}</div>,
+    });
+    const app = new App({ logger: createLogger({ level: "silent" }), health: false }).get("/", (ctx) =>
+      react.render("Greeting", { name: "x", items: [] }, { ctx }),
+    );
+    const html = await (await createTestClient(app).get("/")).text();
+
+    expect(html).toContain('<div id="app"><div data-theme="dark"><main>');
+  });
+});
