@@ -94,10 +94,12 @@ describe("build", () => {
   });
 
   test("bundles the worker entry to dist/worker.js when there is one (spec-6 §12.2)", async () => {
+    // As a process, like `hydrate build`: repeated in-process Bun.build() calls in one test run can
+    // fail with "Unexpected reading file" in Bun 1.3.11.
     const outDir = join(await tempDir(), "dist");
-    const manifest = await build({ ...(await loadHydrateConfig(fixture)), outDir }, { log: () => {} });
+    expect(runCli(["build", "--out-dir", outDir]).code).toBe(0);
 
-    expect(manifest.worker).toBe("worker.js");
+    expect((await Bun.file(join(outDir, "manifest.json")).json()).worker).toBe("worker.js");
     const deployDir = await tempDir();
     await cp(outDir, join(deployDir, "dist"), { recursive: true });
     const run = Bun.spawnSync(["bun", "dist/worker.js"], { cwd: deployDir, stdout: "pipe", env: { ...process.env, NODE_ENV: "production" } });

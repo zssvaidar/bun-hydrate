@@ -280,7 +280,10 @@ export function createTestQueue(options: { now?: () => number } = {}): TestQueue
     },
     async runAll(workerOptions: Omit<WorkerOptions, "queue">): Promise<void> {
       const worker = createWorker({ logger: createLogger({ level: "silent" }), poll: { min: 1, max: 5 }, signals: false, now, ...workerOptions, queue });
-      const due = async () => (await adapter.list({ state: "pending", limit: 10_000 })).items.some((job) => job.runAt <= now());
+      // Jobs no handler here can run are never claimed (spec-6 D12), so they are not waited for.
+      const names = new Set(workerOptions.handlers.map((handler) => handler.name));
+      const due = async () =>
+        (await adapter.list({ state: "pending", limit: 10_000 })).items.some((job) => job.runAt <= now() && names.has(job.name));
       await worker.start();
       while (worker.active > 0 || (await due())) await Bun.sleep(2);
       await worker.stop();

@@ -75,7 +75,9 @@ async function bundleServer(entry: string, outDir: string, file: string): Promis
       define: { "process.env.NODE_ENV": JSON.stringify("production") },
     });
   } catch (error) {
-    throw new Error(`Server bundle failed for ${entry}`, { cause: error });
+    // Bun rejects with an AggregateError whose own message says nothing; show what failed.
+    const reasons = error instanceof AggregateError ? error.errors.map(String).join("\n") : String(error);
+    throw new Error(`Server bundle failed for ${entry}:\n${reasons}`, { cause: error });
   }
   if (!result.success) throw new Error(`Server bundle failed for ${entry}:\n${result.logs.join("\n")}`);
 }

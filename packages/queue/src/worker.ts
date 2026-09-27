@@ -105,7 +105,8 @@ export class Worker {
   private stopping: Promise<void> | undefined;
   private wake: (() => void) | undefined;
   private stopWaking: (() => Promise<void>) | undefined;
-  private readonly onSignal = () => void this.stop();
+  /** Like App: after a signal, the process ends once the worker has stopped and released its jobs. */
+  private readonly onSignal = () => void this.stop().then(() => process.exit(0), () => process.exit(1));
 
   constructor(private readonly options: WorkerOptions) {
     this.handlers = new Map(options.handlers.map((handler) => [handler.name, handler]));

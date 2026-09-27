@@ -32,3 +32,15 @@ test("createTestQueue records dispatches and runs due jobs to completion", async
   expect(ran).toEqual(["one"]); // the delayed job is not due yet
   expect(await queue.dispatched(note)).toEqual([{ text: "later" }]);
 });
+
+test("runAll does not wait for jobs none of its handlers can run", async () => {
+  const other = defineJob({ name: "other", payload: schema.object({}), handle: () => {} });
+  const queue = createTestQueue();
+  await queue.dispatch(other, {});
+  await queue.dispatch(note, { text: "mine" });
+
+  ran.length = 0;
+  await queue.runAll({ handlers: [note] });
+  expect(ran).toEqual(["mine"]);
+  expect(await queue.dispatched(other)).toEqual([{}]);
+}, 2_000);

@@ -156,15 +156,26 @@ describe("lifecycle", () => {
     expect(performance.now() - startedAt).toBeLessThan(3_000);
   });
 
-  test("SIGTERM triggers a graceful stop and signal handlers are removed afterwards", async () => {
-    const before = process.listenerCount("SIGTERM");
-    const app = createApp();
-    await app.listen({ port: 0 });
-    expect(process.listenerCount("SIGTERM")).toBe(before + 1);
+  test("SIGTERM stops gracefully, then ends the process even if leftover work holds it open (spec-6 §11)", async () => {
+    const script = `
+      import { App, createLogger } from "${import.meta.dir}/../src/index";
+      const app = new App({ logger: createLogger({ level: "silent" }) });
+      app.onStop(() => console.log("stopped"));
+      await app.listen({ port: 0 });
+      setTimeout(() => console.log("still alive"), 60_000); // e.g. a handler that ignores its abort signal
+      console.log("ready");
+    `;
+    const child = Bun.spawn(["bun", "-e", script], { stdout: "pipe" });
+    const reader = child.stdout.pipeThrough(new TextDecoderStream()).getReader();
+    let output = "";
+    while (!output.includes("ready")) output += (await reader.read()).value ?? "";
 
-    process.emit("SIGTERM");
-    while (app.state !== "stopped") await Bun.sleep(5);
-
-    expect(process.listenerCount("SIGTERM")).toBe(before);
+    const startedAt = performance.now();
+    child.kill("SIGTERM");
+    expect(await child.exited).toBe(0);
+    expect(performance.now() - startedAt).toBeLessThan(3_000);
+    for (let chunk = await reader.read(); !chunk.done; chunk = await reader.read()) output += chunk.value;
+    expect(output).toContain("stopped");
+    expect(output).not.toContain("still alive");
   });
 });

@@ -86,7 +86,11 @@ export class App extends Router {
   private readonly trustProxy: TrustProxy;
   private readonly isTrustedProxy: ((address: string) => boolean) | undefined;
   private stopping: Promise<void> | undefined;
-  private readonly onSignal = () => void this.stop();
+  /**
+   * After a signal the process ends once shutdown completes, even if leftover work (a timer, a
+   * handler that ignores its abort signal) would keep it open: the orchestrator asked it to go.
+   */
+  private readonly onSignal = () => void this.stop().then(() => process.exit(0), () => process.exit(1));
   private readonly websocketOptions: WebSocketOptions;
   private pubsub: PubSub | undefined;
   private readonly maxBodyBytes: number;
