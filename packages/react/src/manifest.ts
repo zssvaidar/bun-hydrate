@@ -3,6 +3,8 @@ export interface BuildManifest {
   builtAt: string;
   /** Server bundle, relative to the manifest. */
   server: string;
+  /** The worker entry, when the app has one (spec-6 §12.2). */
+  worker?: string;
   /** Present only when the app has a browser entry. */
   client?: { entry: string };
 }

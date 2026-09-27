@@ -4,6 +4,8 @@ import type { FeatureDefinition, FeaturePreset } from "./features/define";
 export interface HydrateConfigInput {
   /** Server entry. Default: src/main.ts */
   server?: string;
+  /** Worker entry, run by `hydrate worker` and built to dist/worker.js when it exists. Default: src/worker.ts */
+  worker?: string;
   /** Browser entry for hydration; omit for API-only apps. */
   client?: string;
   /** Build output directory. Default: dist */
@@ -27,6 +29,7 @@ export interface HydrateConfig {
   database: { migrations: string; seed: string };
   features: FeatureDefinition[];
   presets: FeaturePreset[];
+  worker: string;
 }
 
 export const CONFIG_FILE = "hydrate.config.ts";
@@ -50,5 +53,6 @@ export async function loadHydrateConfig(cwd: string): Promise<HydrateConfig> {
     },
     features: input.features ?? [],
     presets: input.presets ?? [],
+    worker: resolvePath(input.worker ?? "src/worker.ts"),
   };
 }

@@ -51,6 +51,7 @@ describe("loadHydrateConfig", () => {
       database: { migrations: join(fixture, "migrations"), seed: join(fixture, "src/database/seed.ts") },
       features: [],
       presets: [],
+      worker: join(fixture, "src/worker.ts"),
     });
   });
 
@@ -63,6 +64,7 @@ describe("loadHydrateConfig", () => {
       database: { migrations: join(dir, "migrations"), seed: join(dir, "src/database/seed.ts") },
       features: [],
       presets: [],
+      worker: join(dir, "src/worker.ts"),
     });
   });
 });
@@ -89,6 +91,24 @@ describe("build", () => {
     } finally {
       await server.stop();
     }
+  });
+
+  test("bundles the worker entry to dist/worker.js when there is one (spec-6 §12.2)", async () => {
+    const outDir = join(await tempDir(), "dist");
+    const manifest = await build({ ...(await loadHydrateConfig(fixture)), outDir }, { log: () => {} });
+
+    expect(manifest.worker).toBe("worker.js");
+    const deployDir = await tempDir();
+    await cp(outDir, join(deployDir, "dist"), { recursive: true });
+    const run = Bun.spawnSync(["bun", "dist/worker.js"], { cwd: deployDir, stdout: "pipe", env: { ...process.env, NODE_ENV: "production" } });
+    expect(JSON.parse(run.stdout.toString())).toEqual({ worker: true, nodeEnv: "production" });
+  });
+
+  test("hydrate worker explains what is missing when there is no worker entry", async () => {
+    const dir = await tempDir();
+    const result = Bun.spawnSync(["bun", bin, "worker"], { cwd: dir, stdout: "pipe", stderr: "pipe" });
+    expect(result.exitCode).toBe(1);
+    expect(result.stderr.toString()).toContain("No worker entry at src/worker.ts. Add one with: bun hydrate add jobs:database");
   });
 
   test("the build command writes to the configured out dir", async () => {

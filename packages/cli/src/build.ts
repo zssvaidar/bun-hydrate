@@ -9,6 +9,7 @@ export interface BuildOptions {
 }
 
 const SERVER_FILE = "index.js";
+const WORKER_FILE = "worker.js";
 
 /**
  * Produces a self-contained dist/ (spec-3 §11): everything, React included, is bundled, so the
@@ -43,20 +44,25 @@ async function buildProduction(config: HydrateConfig, log: (message: string) => 
   }
 
   log(`Building server  ${config.server}`);
-  await bundleServer(config.server, config.outDir);
+  await bundleServer(config.server, config.outDir, SERVER_FILE);
+  const worker = existsSync(config.worker);
+  if (worker) {
+    log(`Building worker  ${config.worker}`);
+    await bundleServer(config.worker, config.outDir, WORKER_FILE);
+  }
 
   // Shipped with the artifact so a deployed app can migrate itself on start when configured to.
   if (existsSync(config.database.migrations)) {
     await cp(config.database.migrations, join(config.outDir, "migrations"), { recursive: true });
   }
 
-  const manifest: BuildManifest = { builtAt: new Date().toISOString(), server: SERVER_FILE, client };
+  const manifest: BuildManifest = { builtAt: new Date().toISOString(), server: SERVER_FILE, client, ...(worker ? { worker: WORKER_FILE } : {}) };
   await writeManifest(join(config.outDir, "manifest.json"), manifest);
   log(`Build complete   ${config.outDir}`);
   return manifest;
 }
 
-async function bundleServer(entry: string, outDir: string): Promise<void> {
+async function bundleServer(entry: string, outDir: string, file: string): Promise<void> {
   let result: Awaited<ReturnType<typeof Bun.build>>;
   try {
     result = await Bun.build({
@@ -65,7 +71,7 @@ async function bundleServer(entry: string, outDir: string): Promise<void> {
       target: "bun",
       minify: SAFE_MINIFY,
       sourcemap: "linked",
-      naming: { entry: SERVER_FILE },
+      naming: { entry: file },
       define: { "process.env.NODE_ENV": JSON.stringify("production") },
     });
   } catch (error) {

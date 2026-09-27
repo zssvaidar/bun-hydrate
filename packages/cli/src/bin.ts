@@ -1,6 +1,6 @@
 #!/usr/bin/env bun
 import { parseArgs } from "node:util";
-import { join, resolve } from "node:path";
+import { join, relative, resolve } from "node:path";
 import { loadHydrateConfig } from "./config";
 import { DB_COMMANDS, runDbCommand } from "./db";
 import { runAppCommand } from "./features/app-commands";
@@ -14,6 +14,7 @@ Usage: hydrate <command> [options]
 
 Commands:
   dev                              Run the server with reload on change (NODE_ENV=development)
+  worker                           Run the worker (src/worker.ts) with reload on change
   build                            Bundle server and client into a self-contained output directory
   start                            Run the built server (NODE_ENV=production)
   generate module <name> [--auth]  Module with schema, repository, service, controller, routes, test + migration
@@ -41,7 +42,7 @@ Database commands read DATABASE_URL from the environment or .env.
 This CLI does not collect or send usage data.
 `;
 
-const BUILT_IN = new Set<string>(["dev", "build", "start", "generate", "help", ...DB_COMMANDS, ...FEATURE_COMMANDS]);
+const BUILT_IN = new Set<string>(["dev", "worker", "build", "start", "generate", "help", ...DB_COMMANDS, ...FEATURE_COMMANDS]);
 
 async function main(argv: string[]): Promise<number> {
   const cwd = process.cwd();
@@ -98,6 +99,13 @@ async function main(argv: string[]): Promise<number> {
   switch (command) {
     case "dev":
       return run(["bun", "--watch", config.server], "development");
+    case "worker": {
+      if (!(await Bun.file(config.worker).exists())) {
+        console.error(`No worker entry at ${relative(cwd, config.worker)}. Add one with: bun hydrate add jobs:database`);
+        return 1;
+      }
+      return run(["bun", "--watch", config.worker], "development");
+    }
     case "build": {
       // Loaded on demand: bundling pulls in React, which no other command needs.
       const { build } = await import("./build");
