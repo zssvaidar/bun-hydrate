@@ -1,5 +1,6 @@
 export { Database, createDatabase, dialectOf, type DatabaseOptions, type Dialect } from "./database";
 export { isUniqueViolation, isForeignKeyViolation } from "./errors";
+export { instrumentSql, operationOf, type QueryEvent, type QueryObserver } from "./instrument";
 export {
   Migrator,
   parseMigration,

@@ -8,8 +8,16 @@ export interface Engine {
 /** SQLite always; Postgres too when TEST_POSTGRES_URL points at a disposable database. */
 export const engines: Engine[] = [
   { name: "sqlite", open: () => createDatabase({ url: "sqlite://:memory:" }) },
+  // The whole contract again with query instrumentation on, which proxies Bun.SQL (spec-5 D4).
+  { name: "sqlite (instrumented)", open: () => createDatabase({ url: "sqlite://:memory:", onQuery: () => {} }) },
   ...(process.env.TEST_POSTGRES_URL
-    ? [{ name: "postgres", open: () => createDatabase({ url: process.env.TEST_POSTGRES_URL! }) }]
+    ? [
+        { name: "postgres", open: () => createDatabase({ url: process.env.TEST_POSTGRES_URL! }) },
+        {
+          name: "postgres (instrumented)",
+          open: () => createDatabase({ url: process.env.TEST_POSTGRES_URL!, onQuery: () => {} }),
+        },
+      ]
     : []),
 ];
 

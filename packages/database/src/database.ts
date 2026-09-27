@@ -2,6 +2,7 @@ import { AsyncLocalStorage } from "node:async_hooks";
 import { mkdirSync } from "node:fs";
 import { dirname } from "node:path";
 import { SQL, type TransactionSQL } from "bun";
+import { instrumentSql, type QueryObserver } from "./instrument";
 
 export type Dialect = "postgres" | "mysql" | "sqlite";
 
@@ -10,6 +11,8 @@ export interface DatabaseOptions {
   url: string;
   /** Maximum pool size (Postgres/MySQL). */
   max?: number;
+  /** Called after every query made through `db.sql` (not `db.raw`), e.g. for duration metrics. */
+  onQuery?: QueryObserver;
 }
 
 export function dialectOf(url: string): Dialect {
@@ -30,9 +33,12 @@ export class Database implements AsyncDisposable {
   /** The underlying Bun.SQL client — the escape hatch for anything this class doesn't cover. */
   readonly raw: SQL;
   private readonly activeTransaction = new AsyncLocalStorage<SQL>();
+  private readonly onQuery: QueryObserver | undefined;
+  private readonly instrumented = new WeakMap<SQL, SQL>();
 
   constructor(options: DatabaseOptions) {
     this.dialect = dialectOf(options.url);
+    this.onQuery = options.onQuery;
     if (this.dialect === "sqlite") ensureSqliteDirectory(options.url);
     this.raw = new SQL(options.url, options.max === undefined ? {} : { max: options.max });
     if (this.dialect === "sqlite") {
@@ -44,7 +50,7 @@ export class Database implements AsyncDisposable {
 
   /** The current transaction if called inside `transaction()`, otherwise the pool. */
   get sql(): SQL {
-    return this.activeTransaction.getStore() ?? this.raw;
+    return this.observed(this.activeTransaction.getStore() ?? this.raw);
   }
 
   /**
@@ -52,9 +58,16 @@ export class Database implements AsyncDisposable {
    * transaction, it becomes a savepoint, so an inner failure only undoes the inner block.
    */
   transaction<T>(work: (tx: SQL) => Promise<T>): Promise<T> {
-    const run = (tx: SQL) => this.activeTransaction.run(tx, () => work(tx));
+    const run = (tx: SQL) => this.activeTransaction.run(tx, () => work(this.observed(tx)));
     const outer = this.activeTransaction.getStore() as TransactionSQL | undefined;
     return (outer ? outer.savepoint(run) : this.raw.begin(run)) as Promise<T>;
+  }
+
+  private observed(sql: SQL): SQL {
+    if (!this.onQuery) return sql;
+    let wrapped = this.instrumented.get(sql);
+    if (!wrapped) this.instrumented.set(sql, (wrapped = instrumentSql(sql, this.onQuery)));
+    return wrapped;
   }
 
   /** For readiness checks: true if the database answers. */

@@ -92,10 +92,14 @@ describe.each(engines)("Database on $name", ({ open }) => {
   });
 
   test("outside a transaction, db.sql is the pool again", async () => {
+    const pool = db.sql;
+    let inside: unknown;
     await db.transaction(async () => {
+      inside = db.sql;
       await insertEntry(1, "one");
     });
-    expect(db.sql).toBe(db.raw);
+    expect(inside).not.toBe(pool);
+    expect(db.sql).toBe(pool);
   });
 
   test("normalizes unique and foreign key violations across engines", async () => {

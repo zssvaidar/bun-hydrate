@@ -136,7 +136,7 @@ describe.each(engines)("Migrator on $name", ({ name, open }) => {
     expect(await readdir(directory)).toEqual(["20260927080503_add_email_index.sql"]);
   });
 
-  test.skipIf(name !== "postgres")("concurrent migrate() calls apply each migration once", async () => {
+  test.skipIf(!name.startsWith("postgres"))("concurrent migrate() calls apply each migration once", async () => {
     await write("20260101000000_create_users.sql", CREATE_USERS);
     const other = open();
     try {

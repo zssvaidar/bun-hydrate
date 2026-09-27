@@ -1,0 +1,14 @@
+{
+  "name": "@bun-hydrate/observability",
+  "version": "0.1.0",
+  "description": "Prometheus metrics: registry, HTTP/process/cache/rate-limit/database metrics and a /metrics endpoint.",
+  "license": "MIT",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "peerDependencies": {
+    "@bun-hydrate/core": "workspace:*",
+    "@bun-hydrate/database": "workspace:*"
+  }
+}

@@ -68,6 +68,14 @@
         "@bun-hydrate/core": "workspace:*",
       },
     },
+    "packages/observability": {
+      "name": "@bun-hydrate/observability",
+      "version": "0.1.0",
+      "peerDependencies": {
+        "@bun-hydrate/core": "workspace:*",
+        "@bun-hydrate/database": "workspace:*",
+      },
+    },
     "packages/rate-limit": {
       "name": "@bun-hydrate/rate-limit",
       "version": "0.1.0",
@@ -112,6 +120,8 @@
     "@bun-hydrate/database": ["@bun-hydrate/database@workspace:packages/database"],
 
     "@bun-hydrate/di": ["@bun-hydrate/di@workspace:packages/di"],
+
+    "@bun-hydrate/observability": ["@bun-hydrate/observability@workspace:packages/observability"],
 
     "@bun-hydrate/rate-limit": ["@bun-hydrate/rate-limit@workspace:packages/rate-limit"],
 
