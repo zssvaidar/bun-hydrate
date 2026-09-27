@@ -57,3 +57,4 @@ export {
   type ApiKeyStore,
   type ApiKeyStrategyOptions,
 } from "./api-keys";
+export { oidcStrategy, type OidcStrategyOptions } from "./oidc";
