@@ -1,0 +1,54 @@
+import { join } from "node:path";
+import { App, createLogger, defineConfig, env } from "@bun-hydrate/core";
+import { Database, Migrator, createDatabase } from "@bun-hydrate/database";
+import { Container } from "@bun-hydrate/di";
+import { startWorkerIn } from "@bun-hydrate/queue";
+import { workerHandlers } from "./jobs";
+import { AppQueue } from "./jobs/queue";
+import { installPlatform } from "./platform";
+
+/**
+ * The worker process (spec-6 §4): `bun hydrate worker` in development, `bun dist/worker.js` in
+ * production. It runs the jobs in src/jobs and the durable event listeners, and serves no pages.
+ * Yours to edit: register the services your jobs `inject`, and add recurring jobs below.
+ */
+const config = defineConfig({
+  databaseUrl: env.string("DATABASE_URL"),
+  logLevel: env.enum("LOG_LEVEL", ["trace", "debug", "info", "warn", "error", "fatal", "silent"]).default("info"),
+  // Jobs in flight at once in this process.
+  concurrency: env.integer("WORKER_CONCURRENCY").default(10),
+  // Comma-separated queues this worker serves. Default: every queue its jobs use.
+  queues: env.string("WORKER_QUEUES").optional(),
+  // Serves /health, /ready and /metrics for orchestrators. Default: no port.
+  port: env.port("WORKER_PORT").optional(),
+});
+
+const db = createDatabase({ url: config.databaseUrl });
+const container = new Container().value(Database, db);
+// Stop hooks run in reverse: the database, registered first, closes last.
+const app = new App({ logger: createLogger({ level: config.logLevel }) }).onStop(() => db.close());
+
+// The web process migrates (MIGRATE_ON_START or `hydrate db:migrate`); a worker never runs on an older schema.
+app.onStart(async () => {
+  const migrations = join(import.meta.dir, process.env.NODE_ENV === "production" ? "migrations" : "../migrations");
+  const { pending } = await new Migrator({ db, directory: migrations }).status();
+  if (pending.length > 0) throw new Error(`Pending migrations: ${pending.join(", ")}. Run bun hydrate db:migrate first.`);
+});
+
+installPlatform(app, container);
+
+const worker = startWorkerIn(app, {
+  queue: container.get(AppQueue),
+  handlers: workerHandlers(container),
+  container,
+  concurrency: config.concurrency,
+  logger: app.logger,
+  ...(config.queues ? { queues: config.queues.split(",").map((queue) => queue.trim()) } : {}),
+});
+
+// Recurring jobs: one run per slot however many workers there are, e.g.
+// worker.schedule(cleanupExpiredSessionsJob, "17 * * * *");
+void worker;
+
+if (config.port === undefined) await app.run();
+else await app.listen({ port: config.port });

@@ -17,6 +17,8 @@ export interface CommandContext {
    * prompt. Secrets are never accepted as arguments, which end up in shell history.
    */
   readSecret(prompt: string): Promise<string>;
+  /** Everything piped to stdin, e.g. a JSON payload with `--payload-stdin`. */
+  readInput(): Promise<string>;
 }
 
 export type CommandHandler = (ctx: CommandContext) => Promise<void>;

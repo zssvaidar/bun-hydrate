@@ -14,18 +14,23 @@ Usage: hydrate <command> [options]
 
 Commands:
   dev                              Run the server with reload on change (NODE_ENV=development)
-  worker                           Run the worker (src/worker.ts) with reload on change
+  worker [--queues a,b] [--concurrency n]
+                                   Run the worker (src/worker.ts) with reload on change
   build                            Bundle server and client into a self-contained output directory
   start                            Run the built server (NODE_ENV=production)
   generate module <name> [--auth]  Module with schema, repository, service, controller, routes, test + migration
   generate middleware <name>       Middleware and its test
+  generate job <name>              Background job and its test, listed in src/jobs/index.ts
+  generate event <name>            Typed event, e.g. order.shipped
+  generate listener <event> <name> [--durable]
+                                   Listener for an event; --durable runs it as a retried job
   db:migration create <name>       Write an empty timestamped migration
   db:migrate                       Apply pending migrations
   db:rollback [--steps <n>]        Undo the last batch (or the last n migrations)
   db:status                        List applied, pending and missing migrations
   db:seed                          Run the seed file against the database
 
-Features (auth, cache, rate limiting, metrics, CORS):
+Features (auth, cache, rate limiting, metrics, CORS, redis, jobs, events, storage, realtime):
   features                         List features and presets, and what is installed
   add <feature|preset>...          Show the plan, then add (--dry-run: plan only, --yes: no prompt)
   remove <feature>...              Remove (--cascade, --force: delete edited files, --drop-data)
@@ -63,6 +68,9 @@ async function main(argv: string[]): Promise<number> {
       steps: { type: "string" },
       help: { type: "boolean", short: "h" },
       auth: { type: "boolean" },
+      durable: { type: "boolean" },
+      queues: { type: "string" },
+      concurrency: { type: "string" },
       "dry-run": { type: "boolean" },
       yes: { type: "boolean", short: "y" },
       cascade: { type: "boolean" },
@@ -104,7 +112,11 @@ async function main(argv: string[]): Promise<number> {
         console.error(`No worker entry at ${relative(cwd, config.worker)}. Add one with: bun hydrate add jobs:database`);
         return 1;
       }
-      return run(["bun", "--watch", config.worker], "development");
+      const workerEnv = {
+        ...(values.queues ? { WORKER_QUEUES: values.queues } : {}),
+        ...(values.concurrency ? { WORKER_CONCURRENCY: values.concurrency } : {}),
+      };
+      return run(["bun", "--watch", config.worker], "development", workerEnv);
     }
     case "build": {
       // Loaded on demand: bundling pulls in React, which no other command needs.
@@ -115,7 +127,7 @@ async function main(argv: string[]): Promise<number> {
     case "start":
       return run(["bun", join(config.outDir, "index.js")], "production");
     case "generate":
-      await generate(args[0] ?? "", args[1], { cwd, config, auth: values.auth });
+      await generate(args[0] ?? "", args.slice(1), { cwd, config, auth: values.auth, durable: values.durable });
       return 0;
     default:
       console.error(`Unknown command "${command}". Run \`hydrate --help\` to see the available commands.`);
@@ -131,8 +143,8 @@ function parseSteps(value: string | undefined): number | undefined {
 }
 
 /** Runs the app as a child process and forwards shutdown signals so graceful stop still works. */
-async function run(cmd: string[], nodeEnv: string): Promise<number> {
-  const child = Bun.spawn(cmd, { env: { ...process.env, NODE_ENV: nodeEnv }, stdio: ["inherit", "inherit", "inherit"] });
+async function run(cmd: string[], nodeEnv: string, env: Record<string, string> = {}): Promise<number> {
+  const child = Bun.spawn(cmd, { env: { ...process.env, ...env, NODE_ENV: nodeEnv }, stdio: ["inherit", "inherit", "inherit"] });
   for (const signal of ["SIGINT", "SIGTERM"] as const) process.on(signal, () => child.kill(signal));
   return child.exited;
 }

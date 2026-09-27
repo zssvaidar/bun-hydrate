@@ -5,11 +5,12 @@ import { applyPlan } from "../features/apply";
 import { createRegistry } from "../features/catalog";
 import { readManifest } from "../features/manifest";
 import { planSync } from "../features/plan";
+import { generateEvent, generateJob, generateListener } from "./distributed";
 import { middlewareFiles } from "./middleware-template";
 import { SHARED_FILES, moduleFiles, moduleMigration, modulePermissions } from "./module-templates";
 import { moduleNames } from "./names";
 
-export const GENERATORS = ["module", "middleware"] as const;
+export const GENERATORS = ["module", "middleware", "job", "event", "listener"] as const;
 export type GeneratorKind = (typeof GENERATORS)[number];
 
 export interface GenerateOptions {
@@ -19,16 +20,25 @@ export interface GenerateOptions {
   log?: (message: string) => void;
   /** Guard the module's routes with permissions (needs auth:core). */
   auth?: boolean;
+  /** A listener that runs as a job on the worker. */
+  durable?: boolean;
 }
 
-export async function generate(kind: string, name: string | undefined, options: GenerateOptions): Promise<void> {
+export async function generate(kind: string, args: readonly string[], options: GenerateOptions): Promise<void> {
   if (!GENERATORS.includes(kind as GeneratorKind)) {
     throw new Error(`Unknown generator "${kind}". Available: ${GENERATORS.join(", ")}`);
+  }
+  const [name, second] = args;
+  if (kind === "listener") {
+    if (!name || !second) throw new Error("Usage: hydrate generate listener <event> <name> [--durable]");
+    return generateListener(name, second, options);
   }
   if (!name) throw new Error(`Usage: hydrate generate ${kind} <name>`);
 
   if (kind === "module") await generateModule(name, options);
-  else await generateMiddleware(name, options);
+  else if (kind === "middleware") await generateMiddleware(name, options);
+  else if (kind === "job") await generateJob(name, options);
+  else await generateEvent(name, options);
 }
 
 async function generateModule(name: string, { cwd, config, now = new Date(), log = console.log, auth = false }: GenerateOptions) {

@@ -19,10 +19,12 @@ export interface AppCommandOptions {
  */
 export async function runAppCommand(name: string, argv: readonly string[], options: AppCommandOptions): Promise<boolean> {
   const { cwd, registry, log = console.log } = options;
-  const feature = registry.all().find((candidate) => candidate.commands?.some((command) => command.name === name));
-  if (!feature) return false;
+  const providers = registry.all().filter((candidate) => candidate.commands?.some((command) => command.name === name));
+  if (providers.length === 0) return false;
 
+  // Several features may provide a command (jobs:database and jobs:redis both give jobs:*).
   const manifest = await readManifest(cwd);
+  const feature = providers.find((candidate) => manifest.features[candidate.id]) ?? providers[0]!;
   if (!manifest.features[feature.id]) {
     throw new CommandUsageError(`hydrate ${name} comes with ${feature.id}. Add it with: bun hydrate add ${feature.id}`);
   }
@@ -52,6 +54,7 @@ export async function runAppCommand(name: string, argv: readonly string[], optio
     db,
     print: log,
     readSecret: (prompt) => readSecret(prompt, parsed, options.stdin ?? Bun.stdin),
+    readInput: () => (options.stdin ?? Bun.stdin).text(),
   };
   try {
     await handler(ctx);

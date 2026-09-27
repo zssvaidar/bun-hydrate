@@ -1,0 +1,24 @@
+import { defineConfig, env } from "@bun-hydrate/core";
+import { token, type Container } from "@bun-hydrate/di";
+import { S3Storage, type Storage } from "@bun-hydrate/storage";
+
+/** Where uploaded files live: `container.get(AppStorage).put(key, file)`. */
+export const AppStorage = token<Storage>("AppStorage");
+
+/**
+ * Files in an S3 bucket (or MinIO, R2, …), shared by every instance. They are private:
+ * `storage.signedUrl(key, { expiresIn: "10m" })` gives a presigned URL served by the store.
+ */
+export function installStorage(container: Container): void {
+  const { bucket, region, endpoint, accessKeyId, secretAccessKey } = defineConfig({
+    bucket: env.string("S3_BUCKET"),
+    region: env.string("S3_REGION").optional(),
+    endpoint: env.url("S3_ENDPOINT").optional(),
+    // Without keys, Bun's S3 client falls back to AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY.
+    accessKeyId: env.string("S3_ACCESS_KEY_ID").optional(),
+    secretAccessKey: env.string("S3_SECRET_ACCESS_KEY").optional(),
+  });
+  const optional = { region, endpoint, accessKeyId, secretAccessKey };
+  const defined = Object.fromEntries(Object.entries(optional).filter(([, value]) => value !== undefined));
+  container.value(AppStorage, new S3Storage({ bucket, ...defined }));
+}

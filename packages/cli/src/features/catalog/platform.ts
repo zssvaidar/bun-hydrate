@@ -14,13 +14,13 @@ import rateLimit from "./platform-templates/rate-limit.ts.tmpl" with { type: "te
 /** cache, rate-limit, metrics and CORS (spec-5 §9.7), wired by one generated installPlatform(). */
 
 /** Slot `platform.install`: one call in installPlatform(), run in `order` (lowest first). */
-interface PlatformInstall extends NamedImport {
+export interface PlatformInstall extends NamedImport {
   call: string;
   order: number;
 }
 
 /** Declared by every platform feature: it exists while any of them is installed. */
-const platformRoot: FeatureOutput = {
+export const platformRoot: FeatureOutput = {
   kind: "file",
   path: "src/platform/index.ts",
   render(slots: Slots) {
@@ -40,7 +40,7 @@ const platformRoot: FeatureOutput = {
   },
 };
 
-const WIRING = 'Once, in src/app.ts: import { installPlatform } from "./platform"; call installPlatform(app, container) before installAuth() and your routes';
+export const WIRING = 'Once, in src/app.ts: import { installPlatform } from "./platform"; call installPlatform(app, container) before installAuth() and your routes';
 
 export const platformFeatures = [
   defineFeature({
@@ -83,10 +83,10 @@ export const platformFeatures = [
   }),
   defineFeature({
     id: "cache:redis",
-    description: "Redis cache as AppCache in the container, with a readiness check",
+    description: "Redis cache as AppCache in the container, on the app's shared Redis",
+    requires: ["redis"],
     conflicts: ["cache:memory"],
     files: { "src/platform/cache.ts": cacheRedis, "src/platform/cache.test.ts": cacheRedisTest },
-    env: [{ name: "REDIS_URL", description: "redis://… for the cache", required: true }],
     contributes: {
       "platform.install": [{ from: "./cache", name: "installCache", call: "installCache(app, container)", order: 40 }],
     },

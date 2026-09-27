@@ -1,22 +1,20 @@
 import { expect, test } from "bun:test";
 import { App, createLogger } from "@bun-hydrate/core";
 import { Container } from "@bun-hydrate/di";
-import { AppCache, installCache } from "./cache";
-import { installRedis } from "./redis";
+import { AppRedis, installRedis } from "./redis";
 
 // Runs when a Redis for tests is available, e.g. TEST_REDIS_URL=redis://127.0.0.1:6379
-test.if(Boolean(process.env.TEST_REDIS_URL))("registers a Redis cache and a readiness check", async () => {
+test.if(Boolean(process.env.TEST_REDIS_URL))("shares one prefixed Redis and closes it on shutdown", async () => {
   process.env.REDIS_URL = process.env.TEST_REDIS_URL;
+  process.env.REDIS_PREFIX = "platform-test:";
   const app = new App({ logger: createLogger({ level: "silent" }), health: false });
   const container = new Container();
   installRedis(app, container);
-  installCache(app, container);
-  const cache = container.get(AppCache);
+  const redis = container.get(AppRedis);
 
-  await cache.set("platform-test", { ok: true }, 10);
-  expect(await cache.get<{ ok: boolean }>("platform-test")).toEqual({ ok: true });
-  expect(await cache.ping()).toBe(true);
-  await cache.delete("platform-test");
+  expect(redis.key("greeting")).toBe("platform-test:greeting");
+  expect(await redis.ping()).toBe(true);
   await app.run({ handleSignals: false });
   await app.stop();
+  expect(() => redis.client).toThrow();
 });

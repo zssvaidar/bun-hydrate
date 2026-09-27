@@ -39,6 +39,11 @@ export async function diagnose(
       if (current === undefined) issues.push({ level: "problem", message: `${path} (${id}) is missing` });
       else if (contentHash(current) !== hash) {
         issues.push({ level: "info", message: `${path} (${id}) was modified; that's fine, but remove will keep it` });
+      } else if (current !== registry.get(id).files?.[path]) {
+        issues.push({
+          level: "info",
+          message: `${path} (${id}) comes from an older template. It is yours to keep; to take the new one, remove and re-add ${id}`,
+        });
       }
     }
   }

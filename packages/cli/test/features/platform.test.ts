@@ -56,11 +56,13 @@ describe("platform features", () => {
   });
 
   test(
-    "switching to the Redis cache keeps the project compiling; doctor asks for REDIS_URL",
+    "switching to the Redis cache adds the shared redis, keeps the project compiling; doctor asks for REDIS_URL",
     async () => {
       expect(hydrate("remove", "cache:memory", "--yes").code).toBe(0);
       expect(hydrate("add", "cache:redis", "--yes").code).toBe(0);
-      expect(await Bun.file(join(cwd, "src/platform/index.ts")).text()).toContain("installCache(app, container);");
+      const root = await Bun.file(join(cwd, "src/platform/index.ts")).text();
+      expect(root).toContain("  installRedis(app, container);\n  installMetrics(app);");
+      expect(root).toContain("installCache(app, container);");
       expect(await typecheck()).toBe("");
       expect(runTests()).toContain(" 0 fail");
 
@@ -69,13 +71,13 @@ describe("platform features", () => {
         stdout: "pipe",
         env: { ...process.env, DATABASE_URL: "", REDIS_URL: "" },
       });
-      expect(doctor.stdout.toString()).toContain("REDIS_URL is not set (cache:redis");
+      expect(doctor.stdout.toString()).toContain("REDIS_URL is not set (redis");
     },
     SLOW,
   );
 
   test("removing them all removes the generated installPlatform()", async () => {
-    expect(hydrate("remove", "rate-limit", "cache:redis", "metrics", "security:cors", "--yes").code).toBe(0);
+    expect(hydrate("remove", "rate-limit", "cache:redis", "redis", "metrics", "security:cors", "--yes").code).toBe(0);
     expect(await Bun.file(join(cwd, "src/platform")).exists()).toBe(false);
     expect(await Bun.file(join(cwd, "src/platform/index.ts")).exists()).toBe(false);
   });

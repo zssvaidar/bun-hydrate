@@ -13,6 +13,7 @@
   },
   "dependencies": {
     "@bun-hydrate/database": "workspace:*",
+    "@bun-hydrate/queue": "workspace:*",
     "@bun-hydrate/react": "workspace:*"
   }
 }

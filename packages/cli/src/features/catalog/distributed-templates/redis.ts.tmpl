@@ -1,0 +1,19 @@
+import { defineConfig, env, type App } from "@bun-hydrate/core";
+import { token, type Container } from "@bun-hydrate/di";
+import { createRedis, type Redis } from "@bun-hydrate/redis";
+
+/** The process's one Redis (spec-6 §2): the cache, jobs and fan-out share it. `container.get(AppRedis)`. */
+export const AppRedis = token<Redis>("AppRedis");
+
+/** Connects on first use; `/ready` reports it; it closes last on shutdown, after its users. */
+export function installRedis(app: App, container: Container): void {
+  const { url, prefix } = defineConfig({
+    url: env.url("REDIS_URL"),
+    // Keeps apps sharing one Redis apart: every key and channel starts with it.
+    prefix: env.string("REDIS_PREFIX").default("app:"),
+  });
+  const redis = createRedis({ url, prefix });
+  container.value(AppRedis, redis);
+  app.readinessCheck("redis", () => redis.ping());
+  app.onStop(() => redis.close());
+}

@@ -234,6 +234,22 @@ describe("doctor and sync", () => {
     expect(await diagnose(project, registry, await readManifest(cwd), { env: { DEMO_SECRET: "x" } })).toHaveLength(3);
   });
 
+  test("doctor notes a newer template for a file you never edited (spec-6 §14.1)", async () => {
+    const newer = new FeatureRegistry(
+      registry.all().map((feature) =>
+        feature.id === "demo:core" ? { ...feature, files: { "src/demo/core.ts": "export const core = 2;\n" } } : feature,
+      ),
+    );
+    const issues = await diagnose(project, newer, await readManifest(cwd), { env: { DEMO_SECRET: "x" } });
+    expect(issues).toEqual([
+      {
+        level: "info",
+        message:
+          "src/demo/core.ts (demo:core) comes from an older template. It is yours to keep; to take the new one, remove and re-add demo:core",
+      },
+    ]);
+  });
+
   test("a clean project has no issues", async () => {
     expect(await diagnose(project, registry, await readManifest(cwd), { env: { DEMO_SECRET: "x" }, pendingMigrations: [] })).toEqual([]);
   });

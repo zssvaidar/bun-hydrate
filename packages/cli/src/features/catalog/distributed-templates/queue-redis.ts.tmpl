@@ -1,0 +1,16 @@
+import { Database } from "@bun-hydrate/database";
+import { token, type Container } from "@bun-hydrate/di";
+import { RedisQueueAdapter, createQueue, type Queue } from "@bun-hydrate/queue";
+import { AppRedis } from "../platform/redis";
+
+/** Dispatch jobs with `container.get(AppQueue).dispatch(job, payload)`; a worker runs them. */
+export const AppQueue = token<Queue>("AppQueue");
+
+/**
+ * Jobs wait in Redis. Redis cannot join a database transaction, so a job dispatched inside
+ * db.transaction() is enqueued once it commits, and dropped if it rolls back.
+ */
+export function installJobs(container: Container): void {
+  const adapter = new RedisQueueAdapter({ redis: container.get(AppRedis) });
+  container.value(AppQueue, createQueue({ adapter, db: container.get(Database) }));
+}

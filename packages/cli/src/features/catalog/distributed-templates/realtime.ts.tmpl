@@ -1,0 +1,12 @@
+import type { App } from "@bun-hydrate/core";
+import type { Container } from "@bun-hydrate/di";
+import { redisPubSub } from "@bun-hydrate/redis";
+import { AppRedis } from "./redis";
+
+/**
+ * WebSocket fan-out across instances (spec-6 §9): `app.publish(topic, message)` goes through
+ * Redis and reaches subscribers on every instance, this one included.
+ */
+export function installRealtime(app: App, container: Container): void {
+  app.usePubSub(redisPubSub(container.get(AppRedis)));
+}
