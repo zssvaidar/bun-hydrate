@@ -204,7 +204,29 @@ describe.each(stores)("SessionManager with the $name store", ({ name, create }) 
       expect((await client.get("/me").header("cookie", `sid=${laptop}`)).status).toBe(401);
       expect((await client.get("/me").header("cookie", `sid=${phone}`)).status).toBe(401);
     });
+
+    test("purgeExpired deletes idle and past-limit sessions and keeps live ones (for a cleanup job)", async () => {
+      const client = createApp();
+      const idle = sessionId(await client.post("/login/u1"));
+      now += 25 * 60_000;
+      const live = sessionId(await client.post("/login/u1"));
+      now += 10 * 60_000; // the first is 35 minutes idle, the second 10
+
+      expect(await sessions.purgeExpired()).toBe(1);
+      expect(await setup.store.find(sha256(idle))).toBeUndefined();
+      expect(await setup.store.find(sha256(live))).toBeDefined();
+
+      // Past the absolute limit, even when active a moment ago.
+      await setup.store.touch(sha256(live), now + 7 * 24 * 60 * 60_000);
+      now += 7 * 24 * 60 * 60_000 + 1;
+      expect(await sessions.purgeExpired()).toBe(1);
+    });
   } else {
+    test("purgeExpired has nothing to do: cache entries expire on their own", async () => {
+      await createApp().post("/login/u1");
+      expect(await sessions.purgeExpired()).toBe(0);
+    });
+
     test("destroyAllFor explains that a cache store cannot enumerate sessions", async () => {
       await expect(sessions.destroyAllFor("u1")).rejects.toThrow(
         "This session store cannot end all sessions of a user; use DatabaseSessionStore",

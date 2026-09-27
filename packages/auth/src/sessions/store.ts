@@ -20,6 +20,8 @@ export interface SessionStore {
   delete(idHash: string): Promise<void>;
   /** Optional: stores that cannot enumerate a user's sessions leave it out. */
   deleteAllFor?(userId: string): Promise<number>;
+  /** Optional: deletes sessions past `now`, or last seen before `idleBefore`. Stores whose entries expire on their own leave it out. */
+  deleteExpired?(now: number, idleBefore: number): Promise<number>;
 }
 
 /** Portable across SQLite, Postgres and MySQL; bigint because epoch milliseconds overflow int4. */
@@ -88,6 +90,11 @@ export class DatabaseSessionStore implements SessionStore {
 
   async deleteAllFor(userId: string): Promise<number> {
     const result = await this.db.sql`delete from sessions where user_id = ${userId}`;
+    return result.count;
+  }
+
+  async deleteExpired(now: number, idleBefore: number): Promise<number> {
+    const result = await this.db.sql`delete from sessions where expires_at <= ${now} or last_seen_at < ${idleBefore}`;
     return result.count;
   }
 }

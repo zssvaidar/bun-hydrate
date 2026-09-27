@@ -70,6 +70,15 @@ export class SessionManager {
   }
 
   /**
+   * Deletes sessions that can no longer be used, so the store does not grow without bound. Run it
+   * from a recurring job; returns how many were deleted (0 for stores that expire entries themselves).
+   */
+  async purgeExpired(): Promise<number> {
+    const now = this.now();
+    return (await this.options.store.deleteExpired?.(now, now - this.idleMs)) ?? 0;
+  }
+
+  /**
    * Browsers send cookies automatically, so a stale or unknown session cookie is not treated as a
    * failed login: the cookie is cleared and the request continues anonymously. Protected routes
    * still answer 401 through requireAuth().
