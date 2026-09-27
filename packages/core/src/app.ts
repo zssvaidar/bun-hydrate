@@ -1,7 +1,7 @@
-import type { Server } from "bun";
+import type { Server, ServerWebSocket } from "bun";
 import { ipMatcher, resolveClient, type TrustProxy } from "./client-ip";
 import { Context } from "./context";
-import { HttpError, MethodNotAllowedError, NotFoundError, toHttpError } from "./errors";
+import { ForbiddenError, HttpError, MethodNotAllowedError, NotFoundError, toHttpError } from "./errors";
 import { healthHandler, readyHandler, type RegisteredCheck } from "./health";
 import {
   Lifecycle,
@@ -18,7 +18,16 @@ import { compose } from "./middleware";
 import { REQUEST_ID_HEADER, resolveRequestId } from "./request-id";
 import { appendHeader, toResponse, withHeader, withoutBody } from "./response";
 import { RouteTrie, type MatchResult } from "./route-trie";
-import { Router } from "./router";
+import { Router, type PathParams } from "./router";
+import {
+  ROUTE_HANDLERS,
+  WEBSOCKET_DEFAULTS,
+  handlersOf,
+  type AnyHandlers,
+  type UpgradeCapable,
+  type WebSocketHandlers,
+  type WebSocketOptions,
+} from "./websocket";
 import { securityHeaders, type SecurityHeadersOptions } from "./security-headers";
 import { parseTraceparent, randomHex } from "./trace";
 
@@ -34,6 +43,8 @@ export interface AppOptions {
   trustProxy?: TrustProxy;
   /** Baseline security headers (spec-5 §2.1): on by default; pass overrides, or false to turn off. */
   securityHeaders?: SecurityHeadersOptions | false;
+  /** WebSocket limits and allowed origins (spec-5 §1.5). */
+  websocket?: WebSocketOptions;
 }
 
 /** What `fetch` needs from Bun's server: the socket address of the peer. */
@@ -58,7 +69,7 @@ const DEFAULT_READINESS_TIMEOUT_MS = 2_000;
 export class App extends Router {
   readonly logger: Logger;
   /** The running Bun server, once `listen()` has bound it. */
-  server: Server<undefined> | undefined;
+  server: Server<object> | undefined;
 
   private readonly exposeErrors: boolean;
   private readonly logRequests: boolean;
@@ -70,6 +81,13 @@ export class App extends Router {
   private readonly isTrustedProxy: ((address: string) => boolean) | undefined;
   private stopping: Promise<void> | undefined;
   private readonly onSignal = () => void this.stop();
+  private readonly websocketOptions: WebSocketOptions;
+  private readonly sockets = new Set<ServerWebSocket<object>>();
+  /** Per request: the server able to upgrade it (only set by handle(), never by fetch()). */
+  private readonly upgraders = new WeakMap<Context<unknown>, UpgradeCapable>();
+  private readonly upgraded = new WeakSet<Context<unknown>>();
+  private inFlight = 0;
+  private readonly idleWaiters: (() => void)[] = [];
 
   constructor(options: AppOptions = {}) {
     super();
@@ -78,6 +96,7 @@ export class App extends Router {
     this.logRequests = options.logRequests ?? true;
     this.lifecycle = new Lifecycle(this.logger);
     this.trustProxy = options.trustProxy ?? false;
+    this.websocketOptions = options.websocket ?? {};
     this.isTrustedProxy = Array.isArray(this.trustProxy) ? ipMatcher(this.trustProxy) : undefined;
 
     if (options.securityHeaders !== false) this.use(securityHeaders(options.securityHeaders ?? {}));
@@ -114,15 +133,16 @@ export class App extends Router {
   }
 
   /** Runs start hooks, then binds the server. Rejects (after cleaning up) if any step fails. */
-  async listen(options: ListenOptions = {}): Promise<Server<undefined>> {
+  async listen(options: ListenOptions = {}): Promise<Server<object>> {
     if (this.state !== "created") throw new Error(`App is already ${this.state}; listen() can only be called once`);
 
     await this.lifecycle.start();
     try {
-      this.server = Bun.serve({
+      this.server = Bun.serve<object>({
         port: options.port ?? 3000,
         hostname: options.hostname ?? "0.0.0.0",
-        fetch: this.fetch,
+        fetch: (request, server) => this.handle(request, server as unknown as UpgradeCapable),
+        websocket: this.websocketHandler(),
       });
     } catch (error) {
       await this.lifecycle.runShutdownHooks();
@@ -154,10 +174,17 @@ export class App extends Router {
     this.lifecycle.state = "stopping";
     this.logger.info("Shutting down");
 
+    // Long-lived sockets would hold the drain open until the timeout; close them first (FR-243).
+    // 1012 "Service Restart": Bun rewrites 1001 to 1000, and 1012 also tells clients to reconnect.
+    for (const socket of this.sockets) socket.close(1012, "Server restarting");
+
     if (this.server) {
       let timer: Timer | undefined;
       const timedOut = new Promise<false>((resolve) => (timer = setTimeout(() => resolve(false), timeoutMs)));
-      const finishedInTime = await Promise.race([this.server.stop().then(() => true), timedOut]);
+      // Bun's stop() promise never settles once a WebSocket has connected, so our own count of
+      // in-flight requests and open sockets also ends the drain.
+      const drained = Promise.race([this.server.stop().then(() => true), this.untilIdle().then(() => true)]);
+      const finishedInTime = await Promise.race([drained, timedOut]);
       // A pending timer would keep the process alive after shutdown.
       clearTimeout(timer);
       if (!finishedInTime) {
@@ -173,10 +200,85 @@ export class App extends Router {
   }
 
   /**
-   * The web-standard entry point: `Bun.serve({ fetch: app.fetch })`, and what the test client calls.
-   * `server` supplies the socket address; in-process callers may omit it or pass a stand-in.
+   * The web-standard entry point, and what the test client calls. `server` supplies the socket
+   * address; in-process callers may omit it or pass a stand-in. It never upgrades WebSockets
+   * (those routes answer 426) — `listen()` uses handle() for that.
    */
-  readonly fetch = async (request: Request, server?: PeerSource): Promise<Response> => {
+  readonly fetch = async (request: Request, server?: PeerSource): Promise<Response> =>
+    (await this.dispatch(request, server, undefined))!;
+
+  /**
+   * Like fetch(), but with a server able to upgrade WebSockets. Resolves to undefined after a
+   * successful upgrade, which is what Bun.serve expects.
+   */
+  readonly handle = (request: Request, server: UpgradeCapable): Promise<Response | undefined> =>
+    this.dispatch(request, server, server);
+
+  /** Registers a WebSocket route (spec-5 §1.5). The upgrade request runs the full middleware stack. */
+  websocket<Path extends string, Data extends object = {}>(
+    path: Path,
+    handlers: WebSocketHandlers<Data, PathParams<Path>>,
+  ): this {
+    return this.get(path, async (ctx) => {
+      if (this.state !== "running" && this.upgraders.has(ctx)) {
+        throw new HttpError(503, "Server is shutting down", { code: "SHUTTING_DOWN" });
+      }
+      if (!this.isAllowedOrigin(ctx)) throw new ForbiddenError("Origin not allowed", { code: "ORIGIN_REJECTED" });
+
+      const server = this.upgraders.get(ctx);
+      if (!server || ctx.headers.get("upgrade")?.toLowerCase() !== "websocket") {
+        throw new HttpError(426, "This route only accepts WebSocket connections", {
+          code: "UPGRADE_REQUIRED",
+          headers: { upgrade: "websocket" },
+        });
+      }
+
+      const data: object = (await handlers.upgrade?.(ctx)) ?? {};
+      Object.defineProperty(data, ROUTE_HANDLERS, { value: handlers, enumerable: false });
+      if (!server.upgrade(ctx.request, { data, headers: { [REQUEST_ID_HEADER]: ctx.requestId } })) {
+        throw new HttpError(400, "WebSocket upgrade failed", { code: "UPGRADE_FAILED" });
+      }
+      this.upgraded.add(ctx);
+      return new Response(null, { status: 200 });
+    });
+  }
+
+  /** Publishes to a topic's subscribers in this process; returns bytes sent (0 when not listening). */
+  publish(topic: string, message: string | ArrayBufferLike | Uint8Array): number {
+    return this.server?.publish(topic, message as string) ?? 0;
+  }
+
+  private async dispatch(
+    request: Request,
+    server: PeerSource | undefined,
+    upgrader: UpgradeCapable | undefined,
+  ): Promise<Response | undefined> {
+    this.inFlight++;
+    try {
+      return await this.process(request, server, upgrader);
+    } finally {
+      this.inFlight--;
+      this.notifyIfIdle();
+    }
+  }
+
+  private untilIdle(): Promise<void> {
+    return new Promise((resolve) => {
+      this.idleWaiters.push(resolve);
+      this.notifyIfIdle();
+    });
+  }
+
+  private notifyIfIdle(): void {
+    if (this.inFlight > 0 || this.sockets.size > 0) return;
+    for (const resolve of this.idleWaiters.splice(0)) resolve();
+  }
+
+  private async process(
+    request: Request,
+    server: PeerSource | undefined,
+    upgrader: UpgradeCapable | undefined,
+  ): Promise<Response | undefined> {
     const startedAt = performance.now();
     const requestId = resolveRequestId(request.headers.get(REQUEST_ID_HEADER));
     const dispatch = this.match(request);
@@ -191,15 +293,20 @@ export class App extends Router {
       trace,
       ...client,
     });
+    if (upgrader) this.upgraders.set(ctx, upgrader);
 
     let response = await compose(this.ownMiddleware, () => this.run(dispatch, ctx), this.handleError)(ctx);
+    if (this.upgraded.has(ctx)) {
+      if (this.logRequests) this.logRequest(ctx, new Response(null, { status: 200 }), startedAt, 101);
+      return undefined;
+    }
 
     for (const cookie of ctx.cookies.changes()) response = appendHeader(response, "set-cookie", cookie);
     if (request.method === "HEAD") response = withoutBody(response);
     response = withHeader(response, REQUEST_ID_HEADER, requestId);
     if (this.logRequests) this.logRequest(ctx, response, startedAt);
     return response;
-  };
+  }
 
   private match(request: Request): Dispatch {
     try {
@@ -276,12 +383,51 @@ export class App extends Router {
     return new Response(JSON.stringify(body), { status: httpError.status, headers });
   }
 
-  private logRequest(ctx: Context, response: Response, startedAt: number): void {
+  private isAllowedOrigin(ctx: Context<unknown>): boolean {
+    const origin = ctx.headers.get("origin");
+    if (origin === null) return true; // not a browser: cross-site hijacking needs one
+    const ownOrigin = `${ctx.protocol}://${ctx.headers.get("host") ?? ctx.url.host}`;
+    return origin === ownOrigin || (this.websocketOptions.allowedOrigins ?? []).includes(origin);
+  }
+
+  private websocketHandler() {
+    const options = { ...WEBSOCKET_DEFAULTS, ...this.websocketOptions };
+    const guard = (ws: ServerWebSocket<object>, event: string, run: (handlers: AnyHandlers) => unknown) => {
+      const handlers = handlersOf(ws);
+      if (!handlers) return;
+      Promise.resolve()
+        .then(() => run(handlers))
+        .catch((error) => {
+          this.logger.error("WebSocket handler failed", { event, error });
+          ws.close(1011, "Internal error");
+        });
+    };
+
+    return {
+      maxPayloadLength: options.maxPayloadLength,
+      idleTimeout: options.idleTimeout,
+      backpressureLimit: options.backpressureLimit,
+      open: (ws: ServerWebSocket<object>) => {
+        this.sockets.add(ws);
+        guard(ws, "open", (handlers) => handlers.open?.(ws));
+      },
+      message: (ws: ServerWebSocket<object>, message: string | Buffer) =>
+        guard(ws, "message", (handlers) => handlers.message?.(ws, message)),
+      close: (ws: ServerWebSocket<object>, code: number, reason: string) => {
+        this.sockets.delete(ws);
+        this.notifyIfIdle();
+        guard(ws, "close", (handlers) => handlers.close?.(ws, code, reason));
+      },
+      drain: (ws: ServerWebSocket<object>) => guard(ws, "drain", (handlers) => handlers.drain?.(ws)),
+    };
+  }
+
+  private logRequest(ctx: Context, response: Response, startedAt: number, statusOverride?: number): void {
     const fields = {
       method: ctx.method,
       path: ctx.path,
       route: ctx.route,
-      status: response.status,
+      status: statusOverride ?? response.status,
       durationMs: Math.round((performance.now() - startedAt) * 100) / 100,
     };
     if (response.status >= 500) ctx.log.warn("request completed", fields);
