@@ -1,0 +1,13 @@
+{
+  "name": "@bun-hydrate/di",
+  "version": "0.1.0",
+  "description": "Explicit, reflection-free dependency injection with lifetimes and scopes.",
+  "license": "MIT",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "peerDependencies": {
+    "@bun-hydrate/core": "workspace:*"
+  }
+}
