@@ -7,6 +7,8 @@ export function loadConfig(source: EnvSource = process.env) {
       host: env.string("HOST").default("0.0.0.0"),
       logLevel: env.enum("LOG_LEVEL", ["trace", "debug", "info", "warn", "error", "fatal", "silent"]).default("info"),
       logFormat: env.enum("LOG_FORMAT", ["json", "pretty"]).optional(),
+      databaseUrl: env.string("DATABASE_URL").default("sqlite://:memory:"),
+      migrateOnStart: env.boolean("MIGRATE_ON_START").default(false),
     },
     source,
   );

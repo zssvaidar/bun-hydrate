@@ -1,4 +1,5 @@
-import { rm } from "node:fs/promises";
+import { cp, rm } from "node:fs/promises";
+import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { ASSETS_PREFIX, SAFE_MINIFY, bundleClient, writeManifest, type BuildManifest } from "@bun-hydrate/react";
 import type { HydrateConfig } from "./config";
@@ -34,6 +35,11 @@ export async function build(config: HydrateConfig, options: BuildOptions = {}): 
 
   log(`Building server  ${config.server}`);
   await bundleServer(config.server, config.outDir);
+
+  // Shipped with the artifact so a deployed app can migrate itself on start when configured to.
+  if (existsSync(config.database.migrations)) {
+    await cp(config.database.migrations, join(config.outDir, "migrations"), { recursive: true });
+  }
 
   const manifest: BuildManifest = { builtAt: new Date().toISOString(), server: SERVER_FILE, client };
   await writeManifest(join(config.outDir, "manifest.json"), manifest);

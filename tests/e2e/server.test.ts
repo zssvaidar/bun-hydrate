@@ -29,9 +29,22 @@ describe("development server (bun src/main.ts)", () => {
     expect(res.headers.get("cache-control")).toBe("no-cache");
   });
 
-  test("is ready while running", async () => {
+  test("is ready while running, including the database check", async () => {
     const res = await fetch(new URL("/ready", server.url));
     expect(res.status).toBe(200);
+    expect((await res.json()).checks).toEqual({ database: "ok" });
+  });
+
+  test("creates and reads users through the API over real HTTP", async () => {
+    const created = await fetch(new URL("/api/v1/users", server.url), {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ name: "Ada", email: "ada@example.com" }),
+    });
+    expect(created.status).toBe(201);
+
+    const location = created.headers.get("location")!;
+    expect(await (await fetch(new URL(location, server.url))).json()).toMatchObject({ name: "Ada" });
   });
 
   test("development errors do not leak for client mistakes but carry request IDs", async () => {

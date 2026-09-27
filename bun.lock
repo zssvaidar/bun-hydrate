@@ -6,7 +6,10 @@
       "name": "bun-hydrate",
       "dependencies": {
         "@bun-hydrate/core": "workspace:*",
+        "@bun-hydrate/database": "workspace:*",
+        "@bun-hydrate/di": "workspace:*",
         "@bun-hydrate/react": "workspace:*",
+        "@bun-hydrate/validation": "workspace:*",
         "react": "^19.3.0",
         "react-dom": "^19.3.0",
       },
@@ -59,6 +62,7 @@
       "version": "0.1.0",
       "peerDependencies": {
         "@bun-hydrate/core": "workspace:*",
+        "@bun-hydrate/database": "workspace:*",
       },
     },
     "packages/validation": {

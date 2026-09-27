@@ -5,9 +5,11 @@
   "license": "MIT",
   "type": "module",
   "exports": {
-    ".": "./src/index.ts"
+    ".": "./src/index.ts",
+    "./database": "./src/database.ts"
   },
   "peerDependencies": {
-    "@bun-hydrate/core": "workspace:*"
+    "@bun-hydrate/core": "workspace:*",
+    "@bun-hydrate/database": "workspace:*"
   }
 }

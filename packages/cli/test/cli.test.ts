@@ -48,6 +48,7 @@ describe("loadHydrateConfig", () => {
       server: join(fixture, "src/main.ts"),
       client: undefined,
       outDir: join(fixture, "dist"),
+      database: { migrations: join(fixture, "migrations"), seed: join(fixture, "src/database/seed.ts") },
     });
   });
 
@@ -57,6 +58,7 @@ describe("loadHydrateConfig", () => {
       server: join(dir, "src/main.ts"),
       client: undefined,
       outDir: join(dir, "dist"),
+      database: { migrations: join(dir, "migrations"), seed: join(dir, "src/database/seed.ts") },
     });
   });
 });
@@ -72,6 +74,7 @@ describe("build", () => {
     const manifest = await Bun.file(join(outDir, "manifest.json")).json();
     expect(manifest.server).toBe("index.js");
     expect(manifest.client).toBeUndefined();
+    expect(await Bun.file(join(outDir, "migrations/20260101000000_create_fixture.sql")).exists()).toBe(true);
 
     // Copy the artifact somewhere with no node_modules above it, like a deploy target.
     const deployDir = await tempDir();

@@ -22,6 +22,7 @@ describe("built artifact (hydrate build → bun dist/index.js)", () => {
     const assets = await readdir(join(releaseDir, "dist/public/assets"));
 
     expect(manifest.server).toBe("index.js");
+    expect(await readdir(join(releaseDir, "dist/migrations"))).toContain("20260927000000_create_users.sql");
     expect(manifest.client.entry).toMatch(/^\/assets\/client-[a-z0-9]+\.js$/);
     expect(assets).toContain(manifest.client.entry.replace("/assets/", ""));
     expect(await Bun.file(join(releaseDir, "node_modules")).exists()).toBe(false);
@@ -49,8 +50,10 @@ describe("built artifact (hydrate build → bun dist/index.js)", () => {
     expect((await res.json()).status).toBe("ok");
   });
 
-  test("is ready", async () => {
-    expect((await fetch(new URL("/ready", server.url))).status).toBe(200);
+  test("is ready: migrations shipped in dist/ were applied to the in-memory database", async () => {
+    const res = await fetch(new URL("/ready", server.url));
+    expect(res.status).toBe(200);
+    expect(await (await fetch(new URL("/api/v1/users", server.url))).json()).toEqual({ items: [], nextCursor: null });
   });
 
   test("server-renders pages and references the built client bundle", async () => {
@@ -69,9 +72,10 @@ describe("built artifact (hydrate build → bun dist/index.js)", () => {
     expect(res.headers.get("cache-control")).toBe("public, max-age=31536000, immutable");
   });
 
-  test("logs as JSON in production", () => {
-    const record = JSON.parse(server.output()[0]!);
-    expect(record).toMatchObject({ level: "info", msg: "Server listening" });
+  test("logs every line as JSON in production, including the startup migrations", () => {
+    const messages = server.output().map((line) => JSON.parse(line).msg);
+    expect(messages).toContain("Migrations applied");
+    expect(messages).toContain("Server listening");
   });
 
   test("stops gracefully on SIGTERM", async () => {

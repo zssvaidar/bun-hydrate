@@ -6,7 +6,7 @@ export function ServerTime() {
 
   async function load() {
     try {
-      const response = await fetch("/api/time");
+      const response = await fetch("/api/v1/time");
       if (!response.ok) throw new Error(`HTTP ${response.status}`);
       setTime(((await response.json()) as { time: string }).time);
       setError(undefined);

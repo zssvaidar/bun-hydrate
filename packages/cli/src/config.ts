@@ -7,6 +7,12 @@ export interface HydrateConfigInput {
   client?: string;
   /** Build output directory. Default: dist */
   outDir?: string;
+  database?: {
+    /** SQL migrations directory. Default: migrations */
+    migrations?: string;
+    /** Module whose default export seeds the database. Default: src/database/seed.ts */
+    seed?: string;
+  };
 }
 
 /** Resolved config: every path absolute. */
@@ -14,6 +20,7 @@ export interface HydrateConfig {
   server: string;
   client: string | undefined;
   outDir: string;
+  database: { migrations: string; seed: string };
 }
 
 export const CONFIG_FILE = "hydrate.config.ts";
@@ -31,5 +38,9 @@ export async function loadHydrateConfig(cwd: string): Promise<HydrateConfig> {
     server: resolvePath(input.server ?? "src/main.ts"),
     client: input.client === undefined ? undefined : resolvePath(input.client),
     outDir: resolvePath(input.outDir ?? "dist"),
+    database: {
+      migrations: resolvePath(input.database?.migrations ?? "migrations"),
+      seed: resolvePath(input.database?.seed ?? "src/database/seed.ts"),
+    },
   };
 }
