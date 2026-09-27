@@ -1,0 +1,11 @@
+import { describe, expect, test } from "bun:test";
+import { renderToString } from "react-dom/server";
+import { wrapAuth } from "../../auth";
+import { Register } from "./Register";
+
+describe("Register page", () => {
+  test("asks for a new password when signed out", () => {
+    const html = renderToString(wrapAuth(<Register />, { auth: { user: null, permissions: [] } }));
+    expect(html).toMatch(/autocomplete="new-password"/i);
+  });
+});

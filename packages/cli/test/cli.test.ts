@@ -49,6 +49,8 @@ describe("loadHydrateConfig", () => {
       client: undefined,
       outDir: join(fixture, "dist"),
       database: { migrations: join(fixture, "migrations"), seed: join(fixture, "src/database/seed.ts") },
+      features: [],
+      presets: [],
     });
   });
 
@@ -59,6 +61,8 @@ describe("loadHydrateConfig", () => {
       client: undefined,
       outDir: join(dir, "dist"),
       database: { migrations: join(dir, "migrations"), seed: join(dir, "src/database/seed.ts") },
+      features: [],
+      presets: [],
     });
   });
 });
@@ -94,6 +98,13 @@ describe("build", () => {
     expect(code).toBe(0);
     expect(stdout).toContain("Build complete");
     expect(await Bun.file(join(outDir, "index.js")).exists()).toBe(true);
+  });
+
+  test("build leaves NODE_ENV as it found it, so later work in the same process is unaffected", async () => {
+    process.env.NODE_ENV = "test";
+    const outDir = join(await tempDir(), "dist");
+    await build({ ...(await loadHydrateConfig(fixture)), outDir }, { log: () => {} });
+    expect(process.env.NODE_ENV).toBe("test");
   });
 
   test("build fails loudly when the server entry is broken", async () => {

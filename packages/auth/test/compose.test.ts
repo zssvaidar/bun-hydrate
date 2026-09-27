@@ -76,7 +76,8 @@ describe("createAuth", () => {
     });
 
     const app = quietApp().get("/notes", requirePermission("notes.read"), () => ["note"]);
-    auth.install(app, new Container());
+    const { install } = auth; // works detached, as the generated root exports it
+    install(app, new Container());
     const client = createTestClient(app);
 
     expect(await (await client.get("/auth/me").header("x-second", "u2:member")).json()).toEqual({ id: "u2" });
@@ -84,6 +85,17 @@ describe("createAuth", () => {
     expect((await client.get("/notes").header("x-first", "u1:member")).status).toBe(200);
     expect((await client.get("/notes").header("x-first", "u1:guest")).status).toBe(403);
     expect(calls).toEqual(["hello u2", "hello u1", "hello u1", "hello u1"]);
+  });
+
+  test("register() wires services without an app, for console commands and workers", () => {
+    const Greeting = token<string>("Greeting");
+    const auth = createAuth({
+      config: { policy },
+      features: [defineAuthFeature({ id: "auth:core", register: (container) => void container.value(Greeting, "hi") })],
+    });
+    const container = new Container();
+    auth.register(container);
+    expect(container.get(Greeting)).toBe("hi");
   });
 
   test("snapshot() exposes only what the user mapper picks", async () => {

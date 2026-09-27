@@ -13,6 +13,8 @@ export interface GenerateOptions {
   config: HydrateConfig;
   now?: Date;
   log?: (message: string) => void;
+  /** Guard the module's routes with permissions (needs auth:core). */
+  auth?: boolean;
 }
 
 export async function generate(kind: string, name: string | undefined, options: GenerateOptions): Promise<void> {

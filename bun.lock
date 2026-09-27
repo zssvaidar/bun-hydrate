@@ -5,9 +5,13 @@
     "": {
       "name": "bun-hydrate",
       "dependencies": {
+        "@bun-hydrate/auth": "workspace:*",
+        "@bun-hydrate/cache": "workspace:*",
         "@bun-hydrate/core": "workspace:*",
         "@bun-hydrate/database": "workspace:*",
         "@bun-hydrate/di": "workspace:*",
+        "@bun-hydrate/observability": "workspace:*",
+        "@bun-hydrate/rate-limit": "workspace:*",
         "@bun-hydrate/react": "workspace:*",
         "@bun-hydrate/validation": "workspace:*",
         "react": "^19.3.0",

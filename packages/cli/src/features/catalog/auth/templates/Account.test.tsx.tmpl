@@ -1,0 +1,15 @@
+import { describe, expect, test } from "bun:test";
+import { renderToString } from "react-dom/server";
+import { wrapAuth } from "../../auth";
+import { Account } from "./Account";
+
+describe("Account page", () => {
+  test("offers signing out everywhere to a signed-in user", () => {
+    const auth = { user: { id: "u1", email: "ada@example.com", role: "member" }, permissions: [] };
+    expect(renderToString(wrapAuth(<Account />, { auth }))).toContain("Sign out everywhere");
+  });
+
+  test("links to sign-in when signed out", () => {
+    expect(renderToString(wrapAuth(<Account />, { auth: { user: null, permissions: [] } }))).toContain('href="/login"');
+  });
+});

@@ -1,14 +1,15 @@
 {
   "name": "@bun-hydrate/cli",
   "version": "0.1.0",
-  "description": "The `hydrate` command: dev, build, start.",
+  "description": "The `hydrate` command: dev, build, start, generators, database and feature orchestration.",
   "license": "MIT",
   "type": "module",
   "bin": {
     "hydrate": "./src/bin.ts"
   },
   "exports": {
-    ".": "./src/index.ts"
+    ".": "./src/index.ts",
+    "./commands": "./src/commands-api.ts"
   },
   "dependencies": {
     "@bun-hydrate/database": "workspace:*",

@@ -90,6 +90,17 @@ describe("jwtFeature", () => {
     expect((await client.get("/whoami").bearer("not-a-token")).status).toBe(401);
   });
 
+  test("extra claims (e.g. the email) travel in the token, but cannot override the reserved ones", async () => {
+    const { client, container } = appWith([core, jwtFeature({ env: { JWT_SECRET: SECRET } })], (router) =>
+      router.get("/claims", (ctx) => principal(ctx)?.claims ?? null),
+    );
+    const { token } = await container.get(JwtIssuer).issue({ id: "u7", roles: ["member"], claims: { email: "ada@example.com", sub: "admin", iat: 1, roles: ["admin"] } });
+
+    const claims = await (await client.get("/claims").bearer(token)).json();
+    expect(claims).toMatchObject({ sub: "u7", email: "ada@example.com", roles: ["member"] });
+    expect(claims.iat).toBeGreaterThan(1);
+  });
+
   test("fails at startup when JWT_SECRET is missing or too short", () => {
     expect(() => appWith([core, jwtFeature({ env: {} })])).toThrow(ConfigError);
     expect(() => appWith([core, jwtFeature({ env: { JWT_SECRET: "short" } })])).toThrow("JWT_SECRET: expected at least 32 characters");

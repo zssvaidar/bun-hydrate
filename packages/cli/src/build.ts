@@ -17,9 +17,18 @@ const SERVER_FILE = "index.js";
 export async function build(config: HydrateConfig, options: BuildOptions = {}): Promise<BuildManifest> {
   const log = options.log ?? console.log;
   // Bun picks the JSX runtime (jsx vs jsxDEV) from NODE_ENV while transpiling, so it must be
-  // "production" during the build itself, not only when the bundle later runs.
+  // "production" during the build itself, not only when the bundle later runs. Restored after.
+  const nodeEnv = process.env.NODE_ENV;
   process.env.NODE_ENV = "production";
+  try {
+    return await buildProduction(config, log);
+  } finally {
+    if (nodeEnv === undefined) delete process.env.NODE_ENV;
+    else process.env.NODE_ENV = nodeEnv;
+  }
+}
 
+async function buildProduction(config: HydrateConfig, log: (message: string) => void): Promise<BuildManifest> {
   await rm(config.outDir, { recursive: true, force: true });
 
   let client: BuildManifest["client"];

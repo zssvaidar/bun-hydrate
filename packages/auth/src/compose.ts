@@ -1,14 +1,17 @@
 import type { Context, Middleware, Router } from "@bun-hydrate/core";
-import type { Container, Resolver } from "@bun-hydrate/di";
+import type { Container } from "@bun-hydrate/di";
 import { authenticate, type Strategy } from "./authenticate";
 import type { Policy } from "./permissions";
 import type { Principal } from "./principal";
+import type { PackagedFeatureOptions } from "./features";
 import { authSnapshot, type AuthSnapshot } from "./snapshot";
 
 export interface AuthConfig<User = Record<string, unknown>> {
   policy: Policy;
   /** Picks what the browser may see about the signed-in principal. Default: `{ id }`. */
   user?: (principal: Principal) => User;
+  /** Settings for the packaged features, passed by the generated composition root. */
+  features?: PackagedFeatureOptions;
 }
 
 /** A requirement is a feature id, or a list meaning "at least one of these". */
@@ -24,10 +27,10 @@ export interface AuthFeature {
   /** Registers services and stores. Runs for every feature before anything else is resolved. */
   register?(container: Container): void;
   /** Tried in feature order by authenticate(); the first to recognise a credential wins. */
-  strategies?(container: Resolver): Strategy[];
+  strategies?(container: Container): Strategy[];
   /** App-wide middleware that runs after authentication, e.g. csrf(). */
-  middleware?(container: Resolver): Middleware[];
-  routes?(container: Resolver): { path: string; router: Router }[];
+  middleware?(container: Container): Middleware[];
+  routes?(container: Container): { path: string; router: Router }[];
 }
 
 /** Identity helper so feature objects are checked against AuthFeature where they are written. */
@@ -45,6 +48,8 @@ export interface Auth<User> {
   readonly features: readonly AuthFeature[];
   readonly policy: Policy;
   has(id: string): boolean;
+  /** Registers every feature's services, without an app: for console commands and workers. */
+  register(container: Container): void;
   /** Wires every feature into the app: services, authenticate(), middleware, then routes. */
   install(app: Router, container: Container): void;
   /** For the React payload: `shared: (ctx) => ({ auth: auth.snapshot(ctx) })`. */
@@ -55,13 +60,18 @@ export function createAuth<User = { id: string }>({ config, features }: CreateAu
   const ordered = orderFeatures(features);
   const ids = new Set(ordered.map((feature) => feature.id));
   const user = config.user ?? ((principal: Principal) => ({ id: principal.id }) as User);
+  const register = (container: Container) => {
+    for (const feature of ordered) feature.register?.(container);
+  };
 
   return {
     features: ordered,
     policy: config.policy,
     has: (id) => ids.has(id),
+    register,
+    // No `this`: the generated root exports `installAuth = auth.install` as a plain function.
     install(app, container) {
-      for (const feature of ordered) feature.register?.(container);
+      register(container);
       const strategies = ordered.flatMap((feature) => feature.strategies?.(container) ?? []);
       app.use(authenticate({ strategies, policy: config.policy }));
       for (const feature of ordered) app.use(...(feature.middleware?.(container) ?? []));

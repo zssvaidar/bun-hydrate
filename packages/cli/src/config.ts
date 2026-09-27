@@ -1,4 +1,5 @@
 import { isAbsolute, join } from "node:path";
+import type { FeatureDefinition, FeaturePreset } from "./features/define";
 
 export interface HydrateConfigInput {
   /** Server entry. Default: src/main.ts */
@@ -13,6 +14,9 @@ export interface HydrateConfigInput {
     /** Module whose default export seeds the database. Default: src/database/seed.ts */
     seed?: string;
   };
+  /** Extra features and presets for `hydrate add`, e.g. from third-party packages. */
+  features?: FeatureDefinition[];
+  presets?: FeaturePreset[];
 }
 
 /** Resolved config: every path absolute. */
@@ -21,6 +25,8 @@ export interface HydrateConfig {
   client: string | undefined;
   outDir: string;
   database: { migrations: string; seed: string };
+  features: FeatureDefinition[];
+  presets: FeaturePreset[];
 }
 
 export const CONFIG_FILE = "hydrate.config.ts";
@@ -42,5 +48,7 @@ export async function loadHydrateConfig(cwd: string): Promise<HydrateConfig> {
       migrations: resolvePath(input.database?.migrations ?? "migrations"),
       seed: resolvePath(input.database?.seed ?? "src/database/seed.ts"),
     },
+    features: input.features ?? [],
+    presets: input.presets ?? [],
   };
 }

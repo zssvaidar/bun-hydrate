@@ -89,6 +89,9 @@ export interface IssuedToken {
   expiresIn: number;
 }
 
+/** Registered JWT claims and the ones that carry authority; callers cannot set these through `claims`. */
+const RESERVED_CLAIMS = new Set(["iss", "sub", "aud", "exp", "nbf", "iat", "jti", "roles", "permissions", "scope"]);
+
 /** Signs access tokens for the login routes when the app uses JWT instead of sessions. */
 export class JwtIssuer {
   constructor(
@@ -96,9 +99,17 @@ export class JwtIssuer {
     private readonly options: { issuer?: string; audience?: string; ttlSeconds: number; now?: () => number },
   ) {}
 
-  async issue(subject: { id: string; roles: readonly string[]; permissions?: readonly string[] }): Promise<IssuedToken> {
+  /** `claims` adds public claims such as the email; the registered ones (sub, iss, exp, …) always win. */
+  async issue(subject: {
+    id: string;
+    roles: readonly string[];
+    permissions?: readonly string[];
+    claims?: Record<string, unknown>;
+  }): Promise<IssuedToken> {
     const { issuer, audience, ttlSeconds, now } = this.options;
+    const extra = Object.fromEntries(Object.entries(subject.claims ?? {}).filter(([name]) => !RESERVED_CLAIMS.has(name)));
     const claims = {
+      ...extra,
       sub: subject.id,
       roles: [...subject.roles],
       ...(subject.permissions?.length ? { permissions: [...subject.permissions] } : {}),
@@ -199,4 +210,12 @@ export function apiKeysFeature(options: ApiKeysFeatureOptions = {}): AuthFeature
     },
     strategies: (container) => [apiKeyStrategy({ store: container.get(ApiKeys) })],
   });
+}
+
+/** `authConfig.features`: settings for each packaged feature, keyed like the feature factories. */
+export interface PackagedFeatureOptions {
+  sessions?: SessionsFeatureOptions;
+  jwt?: JwtFeatureOptions;
+  oidc?: OidcFeatureOptions;
+  apiKeys?: ApiKeysFeatureOptions;
 }

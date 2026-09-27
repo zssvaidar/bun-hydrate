@@ -1,0 +1,49 @@
+import { createApiKey, listApiKeys, revokeApiKey } from "@bun-hydrate/auth";
+import { ApiKeys } from "@bun-hydrate/auth/features";
+import { CommandUsageError, optionalOption, requiredOption, type CommandHandler } from "@bun-hydrate/cli/commands";
+import { AccountRepository } from "./accounts";
+import { authContainer } from "./core.commands";
+
+const USAGE = "Usage: hydrate auth:api-key create --name <name> --permissions <a,b> [--owner <email>] | list | revoke <keyId>";
+
+/** `hydrate auth:api-key create|list|revoke`: keys are shown once at creation; only their hash is stored. */
+export const apiKeyCommand: CommandHandler = async (ctx) => {
+  const container = authContainer(ctx.db);
+  const store = container.get(ApiKeys);
+  const [action, keyId] = ctx.args;
+
+  switch (action) {
+    case "create": {
+      const name = requiredOption(ctx, "name");
+      const permissions = requiredOption(ctx, "permissions")
+        .split(",")
+        .map((permission) => permission.trim())
+        .filter(Boolean);
+      const ownerEmail = optionalOption(ctx, "owner");
+      const owner = ownerEmail ? await container.get(AccountRepository).findByEmail(ownerEmail) : undefined;
+      if (ownerEmail && !owner) throw new CommandUsageError(`No account with email ${ownerEmail}`);
+
+      const { key, record } = await createApiKey(store, { name, principalId: owner?.id ?? `service:${name}`, permissions });
+      ctx.print(`Created API key ${record.keyId} (${name}) for ${record.principalId}. It is shown only this once:`);
+      ctx.print(key);
+      return;
+    }
+    case "list": {
+      const keys = await listApiKeys(store);
+      if (keys.length === 0) return ctx.print("No API keys");
+      for (const k of keys) {
+        const lastUsed = k.lastUsedAt ? new Date(k.lastUsedAt).toISOString() : "never used";
+        const state = k.revokedAt ? `revoked ${new Date(k.revokedAt).toISOString()}` : "active";
+        ctx.print(`${k.keyId}  ${k.name}  ${k.principalId}  [${k.permissions.join(", ")}]  ${lastUsed}  ${state}`);
+      }
+      return;
+    }
+    case "revoke": {
+      if (!keyId) throw new CommandUsageError(USAGE);
+      ctx.print((await revokeApiKey(store, keyId)) ? `Revoked ${keyId}` : `No active key ${keyId}`);
+      return;
+    }
+    default:
+      throw new CommandUsageError(USAGE);
+  }
+};

@@ -1,0 +1,18 @@
+import { SessionManager, defineAuthFeature, requireAuth, requirePrincipal } from "@bun-hydrate/auth";
+import { Router } from "@bun-hydrate/core";
+
+/** POST /api/v1/auth/logout-everywhere: ends every session of the signed-in user, for the Account page. */
+export const accountFeature = defineAuthFeature({
+  id: "auth:ui-account",
+  requires: ["auth:sessions"],
+  routes: (container) => [
+    {
+      path: "/api/v1/auth",
+      router: new Router().post("/logout-everywhere", requireAuth(), async (ctx) => {
+        const sessions = container.get(SessionManager);
+        await sessions.destroyAllFor(requirePrincipal(ctx).id);
+        await sessions.destroy(ctx);
+      }),
+    },
+  ],
+});
