@@ -6,11 +6,13 @@
   "type": "module",
   "exports": {
     ".": "./src/index.ts",
-    "./permissions": "./src/permissions.ts"
+    "./permissions": "./src/permissions.ts",
+    "./features": "./src/features.ts"
   },
   "peerDependencies": {
     "@bun-hydrate/core": "workspace:*",
     "@bun-hydrate/database": "workspace:*",
+    "@bun-hydrate/di": "workspace:*",
     "@bun-hydrate/cache": "workspace:*"
   }
 }

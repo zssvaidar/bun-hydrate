@@ -30,6 +30,7 @@
         "@bun-hydrate/cache": "workspace:*",
         "@bun-hydrate/core": "workspace:*",
         "@bun-hydrate/database": "workspace:*",
+        "@bun-hydrate/di": "workspace:*",
       },
     },
     "packages/cache": {
