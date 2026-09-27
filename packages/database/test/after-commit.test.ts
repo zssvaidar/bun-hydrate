@@ -58,6 +58,14 @@ describe.each(engines)("db.afterCommit() on $name", ({ open }) => {
     expect(calls).toEqual(["outer", "inner, kept"]);
   });
 
+  test("inTransaction tells whether the caller is inside one", async () => {
+    expect(db.inTransaction).toBe(false);
+    await db.transaction(async () => {
+      expect(db.inTransaction).toBe(true);
+    });
+    expect(db.inTransaction).toBe(false);
+  });
+
   test("runs at once outside a transaction", async () => {
     await db.afterCommit(() => void calls.push("now"));
     expect(calls).toEqual(["now"]);

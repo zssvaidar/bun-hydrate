@@ -11,6 +11,7 @@
         "@bun-hydrate/database": "workspace:*",
         "@bun-hydrate/di": "workspace:*",
         "@bun-hydrate/observability": "workspace:*",
+        "@bun-hydrate/queue": "workspace:*",
         "@bun-hydrate/rate-limit": "workspace:*",
         "@bun-hydrate/react": "workspace:*",
         "@bun-hydrate/redis": "workspace:*",
@@ -83,6 +84,17 @@
         "@bun-hydrate/database": "workspace:*",
       },
     },
+    "packages/queue": {
+      "name": "@bun-hydrate/queue",
+      "version": "0.1.0",
+      "peerDependencies": {
+        "@bun-hydrate/core": "workspace:*",
+        "@bun-hydrate/database": "workspace:*",
+        "@bun-hydrate/di": "workspace:*",
+        "@bun-hydrate/redis": "workspace:*",
+        "@bun-hydrate/validation": "workspace:*",
+      },
+    },
     "packages/rate-limit": {
       "name": "@bun-hydrate/rate-limit",
       "version": "0.1.0",
@@ -112,6 +124,7 @@
         "@bun-hydrate/auth": "workspace:*",
         "@bun-hydrate/core": "workspace:*",
         "@bun-hydrate/database": "workspace:*",
+        "@bun-hydrate/queue": "workspace:*",
       },
     },
     "packages/validation": {
@@ -136,6 +149,8 @@
     "@bun-hydrate/di": ["@bun-hydrate/di@workspace:packages/di"],
 
     "@bun-hydrate/observability": ["@bun-hydrate/observability@workspace:packages/observability"],
+
+    "@bun-hydrate/queue": ["@bun-hydrate/queue@workspace:packages/queue"],
 
     "@bun-hydrate/rate-limit": ["@bun-hydrate/rate-limit@workspace:packages/rate-limit"],
 

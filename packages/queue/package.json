@@ -1,0 +1,17 @@
+{
+  "name": "@bun-hydrate/queue",
+  "version": "0.1.0",
+  "description": "Background jobs and workers: typed jobs, retries, leases, dead jobs, cron; memory, database and Redis adapters.",
+  "license": "MIT",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "peerDependencies": {
+    "@bun-hydrate/core": "workspace:*",
+    "@bun-hydrate/di": "workspace:*",
+    "@bun-hydrate/database": "workspace:*",
+    "@bun-hydrate/redis": "workspace:*",
+    "@bun-hydrate/validation": "workspace:*"
+  }
+}

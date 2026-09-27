@@ -3,7 +3,16 @@ export { ipMatcher, resolveClient, type TrustProxy, type ClientInfo } from "./cl
 export { Cookies, type CookieOptions } from "./cookies";
 export { cors, type CorsOptions } from "./cors";
 export { securityHeaders, DEFAULT_CSP, type SecurityHeadersOptions } from "./security-headers";
-export { parseTraceparent, propagationHeaders, type TraceParent } from "./trace";
+export {
+  parseTraceparent,
+  propagationHeaders,
+  childTrace,
+  runWithTrace,
+  currentTrace,
+  formatTraceparent,
+  type TraceParent,
+  type TraceContext,
+} from "./trace";
 export { type WebSocketHandlers, type WebSocketOptions, type UpgradeCapable } from "./websocket";
 export { Router, joinPaths, type Handler, type PathParams, type RouteDefinition } from "./router";
 export { Context, RequestBody, type ContextState, type RedirectStatus } from "./context";

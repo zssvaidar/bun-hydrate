@@ -29,7 +29,7 @@ import {
   type WebSocketOptions,
 } from "./websocket";
 import { securityHeaders, type SecurityHeadersOptions } from "./security-headers";
-import { parseTraceparent, randomHex } from "./trace";
+import { childTrace, parseTraceparent, runWithTrace } from "./trace";
 
 export interface AppOptions {
   logger?: Logger;
@@ -283,8 +283,7 @@ export class App extends Router {
     const requestId = resolveRequestId(request.headers.get(REQUEST_ID_HEADER));
     const dispatch = this.match(request);
     const client = resolveClient(request, server?.requestIP(request)?.address, this.trustProxy, this.isTrustedProxy);
-    const parent = parseTraceparent(request.headers.get("traceparent"));
-    const trace = { traceId: parent?.traceId ?? randomHex(16), spanId: randomHex(8), flags: parent?.flags ?? "01" };
+    const trace = childTrace(parseTraceparent(request.headers.get("traceparent")));
     const ctx = new Context(request, {
       params: dispatch.kind === "found" ? dispatch.params : {},
       route: dispatch.kind === "found" ? dispatch.value.pattern : undefined,
@@ -295,7 +294,9 @@ export class App extends Router {
     });
     if (upgrader) this.upgraders.set(ctx, upgrader);
 
-    let response = await compose(this.ownMiddleware, () => this.run(dispatch, ctx), this.handleError)(ctx);
+    let response = await runWithTrace(trace, () =>
+      compose(this.ownMiddleware, () => this.run(dispatch, ctx), this.handleError)(ctx),
+    );
     if (this.upgraded.has(ctx)) {
       if (this.logRequests) this.logRequest(ctx, new Response(null, { status: 200 }), startedAt, 101);
       return undefined;

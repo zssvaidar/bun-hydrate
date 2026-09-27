@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { App } from "../src/app";
 import { createLogger } from "../src/logger";
-import { parseTraceparent, propagationHeaders } from "../src/trace";
+import { childTrace, currentTrace, formatTraceparent, parseTraceparent, propagationHeaders, runWithTrace } from "../src/trace";
 
 const VALID = "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01";
 
@@ -63,5 +63,34 @@ describe("trace context in requests", () => {
     await createApp((line) => void lines.push(line)).fetch(new Request("http://localhost/", { headers: { traceparent: VALID } }));
 
     expect(JSON.parse(lines[0]!)).toMatchObject({ msg: "inside", traceId: "4bf92f3577b34da6a3ce929d0e0e4736" });
+  });
+});
+
+describe("ambient trace context", () => {
+  test("is the request's trace inside handlers and middleware, even deep in services", async () => {
+    const seen: (string | undefined)[] = [];
+    const service = async () => {
+      await Bun.sleep(1);
+      return currentTrace();
+    };
+    const app = new App({ logger: createLogger({ level: "silent" }), health: false }).get("/", async (ctx) => {
+      const trace = await service();
+      seen.push(trace && formatTraceparent(trace), `00-${ctx.traceId}-${ctx.spanId}-${ctx.traceFlags}`);
+      return "ok";
+    });
+
+    await app.fetch(new Request("http://localhost/", { headers: { traceparent: "00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01" } }));
+    expect(seen[0]).toBe(seen[1]);
+    expect(seen[0]).toStartWith("00-0af7651916cd43dd8448eb211c80319c-");
+  });
+
+  test("is undefined outside a request, and runWithTrace() sets it for other work (jobs)", async () => {
+    expect(currentTrace()).toBeUndefined();
+    const trace = childTrace(parseTraceparent("00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01"));
+    expect(trace.traceId).toBe("0af7651916cd43dd8448eb211c80319c");
+    expect(trace.spanId).toMatch(/^[0-9a-f]{16}$/);
+    expect(trace.spanId).not.toBe("b7ad6b7169203331");
+    expect(await runWithTrace(trace, async () => currentTrace())).toEqual(trace);
+    expect(childTrace(undefined).traceId).toMatch(/^[0-9a-f]{32}$/);
   });
 });

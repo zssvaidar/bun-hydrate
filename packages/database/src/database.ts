@@ -90,6 +90,11 @@ export class Database implements AsyncDisposable {
     return result;
   }
 
+  /** True inside `transaction()` (including savepoints). */
+  get inTransaction(): boolean {
+    return this.activeTransaction.getStore() !== undefined;
+  }
+
   /**
    * Runs `callback` once the outermost transaction commits, or right away outside one. Dropped if
    * the transaction (or the savepoint it was registered in) rolls back. Errors are reported to
