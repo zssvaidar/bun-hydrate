@@ -1,5 +1,16 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import type { ClaimRequest, NewJob, QueueAdapter } from "@bun-hydrate/queue";
+import { createLogger } from "@bun-hydrate/core";
+import {
+  MemoryQueueAdapter,
+  createQueue,
+  createWorker,
+  type ClaimRequest,
+  type JobDefinition,
+  type NewJob,
+  type Queue,
+  type QueueAdapter,
+  type WorkerOptions,
+} from "@bun-hydrate/queue";
 
 export interface QueueContractTarget {
   adapter: QueueAdapter;
@@ -246,5 +257,33 @@ export function queueContract(name: string, create: () => QueueContractTarget | 
       expect(second.nextCursor).toBeNull();
       expect(ids((await adapter.list()).items)).toEqual(ids([...jobs].reverse()));
     });
+  });
+}
+
+export interface TestQueue extends Queue {
+  /** Payloads of this job's jobs that are still waiting, oldest first. */
+  dispatched<Payload>(definition: JobDefinition<Payload>): Promise<Payload[]>;
+  /** Runs every due job (and any they dispatch) to completion, then returns. */
+  runAll(options: Omit<WorkerOptions, "queue">): Promise<void>;
+}
+
+/** A queue in memory for tests: see what was dispatched, and run it deterministically. */
+export function createTestQueue(options: { now?: () => number } = {}): TestQueue {
+  const adapter = new MemoryQueueAdapter();
+  const now = options.now ?? Date.now;
+  const queue = createQueue({ adapter, now });
+
+  return Object.assign(queue, {
+    async dispatched<Payload>(definition: JobDefinition<Payload>): Promise<Payload[]> {
+      const { items } = await adapter.list({ name: definition.name, state: "pending", limit: 10_000 });
+      return items.reverse().map((job) => JSON.parse(job.payload) as Payload);
+    },
+    async runAll(workerOptions: Omit<WorkerOptions, "queue">): Promise<void> {
+      const worker = createWorker({ logger: createLogger({ level: "silent" }), poll: { min: 1, max: 5 }, signals: false, now, ...workerOptions, queue });
+      const due = async () => (await adapter.list({ state: "pending", limit: 10_000 })).items.some((job) => job.runAt <= now());
+      await worker.start();
+      while (worker.active > 0 || (await due())) await Bun.sleep(2);
+      await worker.stop();
+    },
   });
 }

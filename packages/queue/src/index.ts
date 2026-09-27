@@ -13,3 +13,4 @@ export {
 } from "./define";
 export { retryDelay } from "./backoff";
 export { Queue, createQueue, type QueueOptions, type DispatchOptions, type DispatchResult } from "./queue";
+export { Worker, createWorker, startWorkerIn, type WorkerOptions, type JobFinishedEvent } from "./worker";
