@@ -1,0 +1,17 @@
+{
+  "name": "@bun-hydrate/events",
+  "version": "0.1.0",
+  "description": "Typed application events: in-process listeners after commit, durable listeners as jobs, broadcast across instances.",
+  "license": "MIT",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "peerDependencies": {
+    "@bun-hydrate/core": "workspace:*",
+    "@bun-hydrate/database": "workspace:*",
+    "@bun-hydrate/di": "workspace:*",
+    "@bun-hydrate/queue": "workspace:*",
+    "@bun-hydrate/validation": "workspace:*"
+  }
+}

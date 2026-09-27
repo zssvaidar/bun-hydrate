@@ -18,6 +18,7 @@
     "@bun-hydrate/core": "workspace:*",
     "@bun-hydrate/database": "workspace:*",
     "@bun-hydrate/di": "workspace:*",
+    "@bun-hydrate/events": "workspace:*",
     "@bun-hydrate/observability": "workspace:*",
     "@bun-hydrate/queue": "workspace:*",
     "@bun-hydrate/rate-limit": "workspace:*",

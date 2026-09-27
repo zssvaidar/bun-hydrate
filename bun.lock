@@ -10,6 +10,7 @@
         "@bun-hydrate/core": "workspace:*",
         "@bun-hydrate/database": "workspace:*",
         "@bun-hydrate/di": "workspace:*",
+        "@bun-hydrate/events": "workspace:*",
         "@bun-hydrate/observability": "workspace:*",
         "@bun-hydrate/queue": "workspace:*",
         "@bun-hydrate/rate-limit": "workspace:*",
@@ -74,6 +75,17 @@
       "version": "0.1.0",
       "peerDependencies": {
         "@bun-hydrate/core": "workspace:*",
+      },
+    },
+    "packages/events": {
+      "name": "@bun-hydrate/events",
+      "version": "0.1.0",
+      "peerDependencies": {
+        "@bun-hydrate/core": "workspace:*",
+        "@bun-hydrate/database": "workspace:*",
+        "@bun-hydrate/di": "workspace:*",
+        "@bun-hydrate/queue": "workspace:*",
+        "@bun-hydrate/validation": "workspace:*",
       },
     },
     "packages/observability": {
@@ -147,6 +159,8 @@
     "@bun-hydrate/database": ["@bun-hydrate/database@workspace:packages/database"],
 
     "@bun-hydrate/di": ["@bun-hydrate/di@workspace:packages/di"],
+
+    "@bun-hydrate/events": ["@bun-hydrate/events@workspace:packages/events"],
 
     "@bun-hydrate/observability": ["@bun-hydrate/observability@workspace:packages/observability"],
 
