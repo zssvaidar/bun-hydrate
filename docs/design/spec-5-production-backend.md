@@ -1,0 +1,416 @@
+# bun-hydrate Spec 5 — Production Backend Detailed Design (v0.3)
+
+**Document:** `spec-5`
+**Status:** Draft — for review before implementation
+**Builds on:** `spec-1` §28 (v0.3: authentication, authorization, logging, request IDs, metrics, rate limiting, caching, WebSockets), `spec-2` §2.2/§2.4 (security baseline FR-220–227, tracing FR-242, WebSocket fan-out FR-241, shutdown scope FR-243), `spec-3` (kernel), `spec-4` (validation, DI, database)
+**Out of scope:** `Jenkinsfile` and `deploy.sh` (unchanged); queues, jobs, events and multi-instance WebSocket fan-out (v0.4)
+
+---
+
+## 0. Summary
+
+| Area | Outcome | Where |
+|---|---|---|
+| Kernel additions | client IP behind trusted proxies, cookies, matched route pattern, `traceparent`, WebSocket routes, 429 error | `@bun-hydrate/core` |
+| Security baseline | security headers, CORS, CSRF, secrets from files | `core` (+ `auth` for CSRF) |
+| Authentication | passwords (argon2id), server-side sessions, JWT bearer tokens, OIDC resource server, API keys | `@bun-hydrate/auth` (new) |
+| Authorization | roles → permissions, wildcard permissions, resource-level policies | `@bun-hydrate/auth` |
+| Caching | `Cache` interface, memory (LRU + TTL) and Redis, `remember()` with stampede protection | `@bun-hydrate/cache` (new) |
+| Rate limiting | sliding-window limiter, memory and Redis stores, standard headers | `@bun-hydrate/rate-limit` (new) |
+| Metrics | Prometheus registry, HTTP/process/cache/rate-limit metrics, `/metrics` | `@bun-hydrate/observability` (new) |
+| Logging, request IDs | already done in v0.1; v0.3 adds `route` and `traceId` to log lines | `core` |
+| Reference app | register/login/logout/me, protected users API, login brute-force limits, `/metrics`, a WebSocket room | `src/` |
+
+Every capability is verified to exist in Bun 1.3.11 (probed while writing this spec). That covers `Bun.password` (argon2id), `Bun.CookieMap`, `Bun.RedisClient` (GET/SET/INCR/EXPIRE/EVAL/pub-sub), `server.requestIP()`, `server.upgrade()` with topics, WebCrypto ECDSA/RSA/HMAC, and `perf_hooks.monitorEventLoopDelay`. So no new third-party runtime dependency is needed.
+
+---
+
+## 1. Kernel changes (`@bun-hydrate/core`)
+
+These are the only changes to the stable kernel. Each is additive: no existing API changes meaning, and all 279 existing tests must keep passing unmodified.
+
+### 1.1 Client IP, protocol and trusted proxies (spec-2 FR-226)
+
+Rate limiting, audit logs and HSTS all need the real client address, but the app normally runs behind a load balancer or tunnel. Trusting `X-Forwarded-For` blindly lets any client spoof its IP and bypass rate limits. So trust is explicit, and off by default.
+
+```ts
+new App({ trustProxy: false });            // default: ctx.ip = socket address
+new App({ trustProxy: 1 });                // one proxy hop (e.g. a single load balancer)
+new App({ trustProxy: ["10.0.0.0/8", "127.0.0.1"] });  // trust these proxy addresses
+```
+
+- `App.fetch(request, server?)` receives Bun's server. `ctx.ip` starts from `server.requestIP(request)`, then walks `X-Forwarded-For` right to left, skipping only trusted hops.
+- `ctx.protocol` is `"https"` or `"http"`, taken from `X-Forwarded-Proto` only when the immediate peer is trusted.
+- In-process tests have no socket, so `ctx.ip` falls back to `"127.0.0.1"`. The test client can set it with `.ip("203.0.113.9")`.
+
+### 1.2 Matched route pattern
+
+`ctx.route` is the pattern that matched (for example `"/api/v1/users/:id"`), or `undefined` for 404s. Metrics must label by pattern, never by raw path: raw paths contain IDs, which would create unbounded label cardinality. The request log line gains a `route` field.
+
+### 1.3 Cookies
+
+```ts
+ctx.cookies.get("sid");
+ctx.cookies.set("sid", value, { httpOnly: true, secure: true, sameSite: "lax", path: "/", maxAge: 3600 });
+ctx.cookies.delete("sid");
+```
+
+- The jar is backed by `Bun.CookieMap`, parsed lazily from the request.
+- Changes are appended as `Set-Cookie` headers to the **final** response at dispatch, the same place `x-request-id` is added. So they apply even when a handler returns its own `Response` or an error response is produced.
+- Defaults applied to every `set`: `path=/`, `httpOnly`, `sameSite=lax`, and `secure` when `ctx.protocol` is `https` (FR-223).
+
+### 1.4 Trace context (spec-2 FR-242, propagation part)
+
+- An incoming W3C `traceparent` is parsed and validated. Otherwise a new trace ID is generated.
+- `ctx.traceId` and `ctx.spanId` are exposed, and `traceId` is bound into `ctx.log` next to `requestId`.
+- `propagationHeaders(ctx)` returns `{ traceparent, "x-request-id" }` for outgoing `fetch` calls, so one trace follows a request across services.
+- **Not included:** exporting spans to an OpenTelemetry collector. That needs the OTel SDK, which conflicts with the no-dependency core, and belongs in an optional adapter package later. v0.3 gives correlation (the same IDs in every log line and downstream call), which is most of the debugging value.
+
+### 1.5 WebSocket routes (FR-110, spec-2 FR-243)
+
+```ts
+app.websocket("/ws/rooms/:room", {
+  // Runs after global middleware (auth, rate limits, CORS), like any GET route.
+  upgrade(ctx) {
+    const user = requireUser(ctx);           // throw → normal HTTP error response, no upgrade
+    return { user, room: ctx.params.room };  // becomes ws.data (typed)
+  },
+  open(ws) { ws.subscribe(`room:${ws.data.room}`); },
+  message(ws, message) { ws.publish(`room:${ws.data.room}`, message); },
+  close(ws, code, reason) {},
+});
+app.publish("room:lobby", "server says hi");  // publish from anywhere, e.g. an HTTP handler
+```
+
+- **Routing:** `app.websocket(path, handlers)` registers a GET route whose terminal step calls `server.upgrade()`. The upgrade request therefore goes through the full middleware stack and error format.
+- **Handler dispatch:** Bun has one global `websocket` handler per server. The App installs it and dispatches to the right route's handlers through `ws.data`.
+- **Cross-site WebSocket hijacking:** browsers send cookies on cross-site WebSocket upgrades, and CORS does not apply to them. So the `Origin` header is checked against `allowedOrigins`, which defaults to same-origin. A mismatch returns 403 before upgrading.
+- **Limits:** `maxPayloadLength` (default 64 KiB), `idleTimeout` (default 120 s) and `backpressureLimit` are set per app, with safe defaults.
+- **Shutdown (FR-243):** on `stop()`, new upgrades are refused with 503, and open sockets are closed with code `1001` ("going away") before the HTTP drain.
+- **Scope:** pub/sub is **process-local** in v0.3, because Bun topics live in one process. Multi-instance fan-out through Redis pub/sub is v0.4 (spec-2 FR-241). The docs will say this explicitly.
+
+### 1.6 Other kernel additions
+
+- `TooManyRequestsError` (429), with an optional `retryAfter` that sets `Retry-After`.
+- **Secrets from files (FR-227):** `defineConfig` also honours the `<NAME>_FILE` convention. If `DATABASE_URL_FILE=/run/secrets/db` is set, the value is read from that file, which is how Docker and Kubernetes secrets are mounted. Setting both `NAME` and `NAME_FILE` is a config error. Vault/SSM adapters stay out of scope.
+
+---
+
+## 2. Security baseline middleware (spec-2 FR-220–222)
+
+### 2.1 `securityHeaders()` — core
+
+Enabled by default in `new App()` (`securityHeaders: false` opts out), because a secure default beats a forgotten opt-in.
+
+| Header | Default |
+|---|---|
+| `Content-Security-Policy` | `default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'self'; frame-ancestors 'none'; form-action 'self'` |
+| `Strict-Transport-Security` | `max-age=31536000; includeSubDomains`, **only** when `ctx.protocol === "https"` |
+| `X-Content-Type-Options` | `nosniff` |
+| `Referrer-Policy` | `strict-origin-when-cross-origin` |
+| `X-Frame-Options` | `DENY` (for browsers without `frame-ancestors`) |
+| `Cross-Origin-Opener-Policy` | `same-origin` |
+
+The default CSP was checked against our own SSR output. The hydration payload is `<script type="application/json">`, a data block that `script-src` doesn't govern. The client bundle is a same-origin module script. So hydration works under `script-src 'self'` with no inline-script hash or nonce. The browser e2e test gains an assertion that no CSP violation is reported. `connect-src 'self'` must be widened by apps that call other origins, and the option is documented.
+
+### 2.2 `cors()` — core
+
+```ts
+app.use(cors({ origin: ["https://app.example.com"], credentials: true, maxAge: 600 }));
+```
+
+- `origin` is a list or a predicate `(origin) => boolean`. `origin: "*"` together with `credentials: true` throws at construction: browsers reject it anyway, and it is a common misconfiguration.
+- It answers preflight requests (`OPTIONS` with `Access-Control-Request-Method`) itself, before routing. On other responses it sets `Access-Control-Allow-Origin` to the request origin (never a reflected wildcard) and adds `Vary: Origin`.
+- Disallowed origins get no CORS headers (the browser blocks the response). The request isn't failed server-side, because non-browser clients legitimately send no `Origin`.
+
+### 2.3 `csrf()` — auth package
+
+CSRF only matters for **ambient** credentials, i.e. cookies. Bearer tokens and API keys are exempt, because a cross-site form can't attach them.
+
+- Applies to unsafe methods (POST/PUT/PATCH/DELETE) on requests authenticated by a session cookie.
+- The request passes if `Sec-Fetch-Site` is `same-origin`, or `Origin` is in the allowed list, which defaults to the app's own origin. Failing that, `Referer` is checked the same way. Anything else gets `403 CSRF_REJECTED`.
+- This is the header-based defense OWASP recommends. It needs no token plumbing through forms and SSR, and combined with `SameSite=Lax` cookies it covers all current browsers. A synchronizer-token mode is **not** included; it can be added if an app must support very old browsers.
+
+---
+
+## 3. Authentication (`@bun-hydrate/auth`, FR-070/071)
+
+### 3.1 The principal and how routes use it
+
+```ts
+interface Principal {
+  id: string;
+  kind: "user" | "service";
+  roles: readonly string[];
+  permissions: readonly string[];   // resolved from roles + direct grants
+  via: "session" | "jwt" | "api-key";
+  claims?: Record<string, unknown>; // JWT/OIDC claims
+}
+
+app.use(authenticate(sessionStrategy, jwtStrategy, apiKeyStrategy));  // tries each in order
+
+router.get("/me", requireAuth(), (ctx) => principal(ctx));            // 401 if anonymous
+router.delete("/:id", requirePermission("users.delete"), handler);    // 403 if lacking
+```
+
+- **Anonymous is not an error.** `authenticate()` never rejects anonymous requests, so public routes stay public. It rejects only **invalid** credentials: an expired token or a forged cookie gets `401`, never a silent downgrade to anonymous. This avoids confusing half-authenticated states.
+- **Reading the principal:** `principal(ctx)` returns the `Principal` or `undefined`, and `requirePrincipal(ctx)` throws 401. This is the same accessor pattern as `scopeOf(ctx)`, so there is no core change and no untyped `ctx.state` lookup.
+- **401 responses** include `WWW-Authenticate` (`Bearer realm="api"` when bearer is enabled).
+
+### 3.2 Passwords
+
+- `hashPassword(plain)` and `verifyPassword(plain, hash)` wrap `Bun.password`. The algorithm is argon2id, with Bun's current parameters `m=65536, t=2, p=1`.
+- `needsRehash(hash)` compares the parameters in the stored hash with the current ones, so the app can upgrade a hash transparently on the next successful login.
+- `verifyPassword` against a **missing** user still performs a hash with a dummy value. This equalizes response time, so login timing doesn't reveal which emails exist.
+- No API accepts or stores a reversible password (FR-224).
+
+### 3.3 Sessions (server-side, opaque)
+
+A cookie carries a random 256-bit session ID. The store keeps only its **SHA-256 hash**, so a leaked sessions table cannot be replayed as live sessions.
+
+```ts
+const sessions = new SessionManager({
+  store: new DatabaseSessionStore(db),   // or CacheSessionStore(cache) for memory/Redis
+  cookie: "sid",
+  idleTimeout: "30m",                    // sliding: extended on use (at most once a minute)
+  absoluteTimeout: "7d",                 // hard cap, regardless of activity
+});
+
+await sessions.create(ctx, principalId);   // after login; always issues a NEW id (no fixation)
+await sessions.destroy(ctx);               // logout
+await sessions.destroyAllFor(userId);      // "sign out everywhere", password change
+```
+
+- **Stores:**
+  - `DatabaseSessionStore` is the default for apps with a database. It uses a `sessions` table from a migration shipped with the package and copied in by `hydrate generate auth` (§8). It supports `destroyAllFor`.
+  - `CacheSessionStore` runs on any `Cache` (memory for dev/tests, Redis in production). It has no `destroyAllFor`, because a cache can't be enumerated by user, and this is documented.
+- **Session fixation:** the ID is rotated on login and privilege change.
+- **Cookie flags** come from §1.3, with `Max-Age` equal to the absolute timeout.
+
+### 3.4 JWT bearer tokens
+
+A small in-house implementation on WebCrypto. JWT libraries are a known source of algorithm-confusion bugs, and the required surface is small.
+
+- **Algorithms:** HS256, ES256 and RS256 (sign and verify). **Each key is bound to exactly one algorithm**, and a token's `alg` header must match it. This blocks algorithm-confusion attacks (e.g. `RS256`→`HS256` with the public key as HMAC secret). `none` is always rejected.
+- **Validated claims:** `exp`, `nbf` and `iat`, with configurable clock skew (default 30 s); `iss` and `aud` when configured. `sub` becomes `Principal.id`.
+- **API:** `signJwt(payload, key, { expiresIn })` and `verifyJwt(token, keys, expectations)`. The strategy is `jwtStrategy({ keys, issuer, audience, toPrincipal })`.
+
+### 3.5 OIDC (resource server)
+
+`oidcStrategy({ issuer, audience })` validates bearer tokens issued by an external identity provider (Auth0, Keycloak, Entra, Cognito…):
+
+- Reads `<issuer>/.well-known/openid-configuration` once, then the `jwks_uri`.
+- Caches keys by `kid`. An unknown `kid` triggers one JWKS refresh, rate-limited to once a minute, so key rotation works and junk tokens can't make us hammer the provider.
+- Maps claims to a `Principal` through a user-supplied `toPrincipal(claims)`, with a default of `sub` plus the `roles`/`scope` claims.
+
+The **browser login flow** (authorization code + PKCE, callback route, state/nonce cookies) is decision D1 (§9).
+
+### 3.6 API keys (service-to-service)
+
+- **Format:** `hk_<keyId>_<secret>`, where the secret is 32 random bytes in base64url. The `keyId` prefix makes keys identifiable in logs and by secret scanners without revealing the secret.
+- **Storage:** only `sha256(secret)` is stored, in the `api_keys` table: `key_id`, `hash`, `name`, `principal_id`, `permissions`, `created_at`, `last_used_at`, `revoked_at`. Comparison is constant-time (`crypto.timingSafeEqual`).
+- **Transport:** `Authorization: Bearer hk_…` or an `X-API-Key` header.
+- **Managing keys:** `createApiKey()` returns the full key **once**; `revokeApiKey()` revokes one.
+
+---
+
+## 4. Authorization (FR-072)
+
+```ts
+const policy = definePolicy({
+  roles: {
+    admin: ["*"],
+    support: ["users.read", "users.update"],
+    member: ["profile.*"],
+  },
+});
+
+requireRole("admin");
+requirePermission("users.read");
+requirePermission("users.update", "users.delete");   // all of them
+```
+
+- **Permissions** are dot-separated strings. `*` matches everything, and `users.*` matches `users.read` but not `users` itself.
+- **When roles resolve:** a principal's permissions are resolved from its roles **once**, in `authenticate()`, so checks are set lookups.
+- **Resource-level rules** (e.g. "users may edit only themselves") are plain functions in the service layer:
+  ```ts
+  if (!can(actor, "users.update") && actor.id !== targetId) throw new ForbiddenError();
+  ```
+  `can(principal, permission)` is exported for this. The framework deliberately doesn't invent a policy DSL.
+- **Status codes:** 401 when there is no principal, and 403 when the principal is authenticated but lacks the permission. An error response never lists which permission was missing (least disclosure); the log line does.
+
+---
+
+## 5. Caching (`@bun-hydrate/cache`, FR-080/081)
+
+```ts
+interface Cache {
+  get<T>(key: string): Promise<T | null>;
+  set<T>(key: string, value: T, ttl?: number): Promise<void>;   // ttl in seconds (spec-1 signature)
+  delete(key: string): Promise<void>;
+  has(key: string): Promise<boolean>;
+  remember<T>(key: string, ttl: number, load: () => Promise<T>): Promise<T>;
+  namespace(prefix: string): Cache;                              // "users:" + key
+}
+```
+
+- **Values are JSON-serialized in every adapter**, including memory. Behaviour is then identical in tests (memory) and production (Redis): a cached object can't be mutated through a shared reference, and non-JSON values (Dates, class instances) fail the same way everywhere. `null` is not cacheable (it means a miss) and throws. `undefined` is rejected too.
+- **`MemoryCache({ maxEntries: 10_000 })`:** LRU eviction plus TTL. Expired entries are dropped on access and by a periodic sweep whose timer is `unref`'d, so it never keeps the process alive.
+- **`RedisCache({ url | client, prefix })`:** built on `Bun.RedisClient` (`SET key value EX ttl`). Errors surface to the caller: a cache outage should be visible, not silently turned into misses. Apps that prefer fail-open wrap the call.
+- **`remember()` stampede protection:** concurrent misses for the same key **in this process** share one `load()` call (single flight). Cross-instance stampede protection (distributed locks) is not included.
+- **Readiness:** `cache.ping()` for `app.readinessCheck("cache", …)`.
+
+---
+
+## 6. Rate limiting (`@bun-hydrate/rate-limit`, FR-170)
+
+```ts
+app.use(rateLimit({ limit: 100, window: "1m" }));                    // per client IP
+router.post("/login", rateLimit({
+  limit: 5, window: "15m",
+  key: async (ctx) => `login:${ctx.ip}:${(await peekJson(ctx))?.email ?? ""}`,
+  store: redisStore,
+}), loginHandler);
+```
+
+- **Algorithm:** a sliding-window counter. It keeps two fixed-window counters, current and previous, weighted by overlap. It is accurate to within a few percent, costs O(1) memory per key, and needs one atomic Lua script in Redis (`EVAL` was verified in the probe). This avoids fixed-window bursts at window edges without storing every timestamp.
+- **Stores:** `MemoryRateLimitStore` (single instance and tests) and `RedisRateLimitStore` (shared across instances). A store outage **fails open** by default, logged at `warn`, because a Redis blip shouldn't take the API down. `failClosed: true` makes it strict for sensitive routes such as login.
+- **Key:** defaults to `ctx.ip`, so §1.1's trusted-proxy handling is what makes this safe behind a load balancer. It can be keyed by user, API key or route instead.
+- **Headers:**
+  - Every response gets `RateLimit-Policy: "default";q=100;w=60` and `RateLimit: "default";r=37;t=23`, following the IETF draft `draft-ietf-httpapi-ratelimit-headers`.
+  - A rejected request gets `429 TOO_MANY_REQUESTS` with `Retry-After`.
+- **Window syntax:** durations like `"30s"`, `"1m"`, `"15m"`, `"1h"` or `"1d"`, parsed once at construction; invalid ones throw immediately.
+
+---
+
+## 7. Metrics (`@bun-hydrate/observability`, FR-162)
+
+```ts
+const metrics = createMetrics();                 // registry with default process metrics
+app.use(metrics.http());                         // HTTP metrics middleware
+app.get("/metrics", metrics.endpoint({ token: config.metricsToken }));
+
+const signups = metrics.counter("signups_total", "Accounts created", ["plan"]);
+signups.inc({ plan: "free" });
+```
+
+| Metric | Type | Labels |
+|---|---|---|
+| `http_requests_total` | counter | `method`, `route`, `status` |
+| `http_request_duration_seconds` | histogram (buckets 5 ms … 10 s) | `method`, `route` |
+| `http_requests_in_flight` | gauge | — |
+| `process_resident_memory_bytes`, `process_heap_bytes` | gauge | — |
+| `process_uptime_seconds` | gauge | — |
+| `process_eventloop_lag_seconds` (p50/p99) | gauge | — (via `perf_hooks.monitorEventLoopDelay`) |
+| `cache_requests_total` | counter | `cache`, `result` (hit/miss) |
+| `rate_limit_decisions_total` | counter | `limiter`, `decision` (allowed/limited/store_error) |
+| `db_query_duration_seconds` | histogram | `operation` (see D4) |
+
+- **Exposition:** Prometheus text format 0.0.4, implemented in-house as a counter/gauge/histogram registry of about 200 lines. There is no `prom-client` dependency.
+- **Cardinality guard:** `route` is the matched pattern (§1.2), and unmatched requests are labelled `route="<unmatched>"`. A metric refuses to create more than `maxSeries` label combinations (default 1000); it logs one warning and drops new series instead of eating memory.
+- **Exposure:** `/metrics` leaks internals, so it is protected by a bearer token when `METRICS_TOKEN` is set. When the token isn't set in production, the endpoint is **not registered** and a startup warning is logged. See D3 for a separate internal port.
+- **Queue latency:** spec-1 lists it, but queues arrive in v0.4, so it is deferred there.
+
+---
+
+## 8. Testing and tooling
+
+- **Test client:**
+  - `createTestClient(app, { cookies: true })` keeps a cookie jar across requests, so session tests read naturally: register, log in, call a protected route.
+  - `.ip("203.0.113.9")` sets the client IP for rate-limit tests.
+  - `.bearer(token)` is shorthand for the `Authorization` header.
+- **Auth test helpers:** `signTestToken(claims)` / `testKeys()` provide a throwaway ES256 key pair for JWT tests. `createTestPrincipal({ roles })` builds a principal for unit-testing services.
+- **WebSockets:** `connectWebSocket(url, { headers })` returns an object with `send()`, `next()` (awaits the next message, with a timeout) and `close()`. It is used against real servers started with `spawnServer` or `app.listen({ port: 0 })`; there is no in-process WebSocket.
+- **Redis:** Redis-backed tests run when `TEST_REDIS_URL` is set, mirroring `TEST_POSTGRES_URL`. The memory adapters always run.
+- **CLI:** `hydrate generate auth` writes the `sessions` / `api_keys` migrations and a password-login module (register/login/logout/me) into an existing project, following the same "type-checks and its tests pass as generated" rule as `generate module`.
+
+---
+
+## 9. Reference app changes
+
+- **Migration:**
+  - Add `password_hash` and `role` (`member` | `admin`, default `member`) to `users`.
+  - New `sessions` table: `id_hash`, `user_id`, `created_at`, `last_seen_at`, `expires_at`, `user_agent`, `ip`.
+- **Auth routes (`/api/v1/auth`):**
+  - `POST /register` (hashes the password, returns 201, starts a session).
+  - `POST /login`, rate-limited per IP+email with 5 attempts per 15 min, fail-closed. The response is the same `401 INVALID_CREDENTIALS` for an unknown email and a wrong password, and it rehashes on success when `needsRehash`.
+  - `POST /logout` and `GET /me`.
+- **Users API authorization:**
+  - `GET /` and `DELETE /:id` need `users.read` / `users.delete` (admins).
+  - `PATCH /:id` is allowed for the user themself or with `users.update`.
+  - `GET /:id` is allowed for self or `users.read`.
+- **App-wide:** `securityHeaders()` (default), `csrf()`, `cors()` from `CORS_ORIGINS`, a global `rateLimit` (300/min per IP), `/metrics` behind `METRICS_TOKEN`, and a readiness check for the cache when Redis is configured.
+- **WebSocket:** `/ws/rooms/:room` (signed-in users only) broadcasts messages to the room, showing upgrade auth, origin checks and shutdown.
+- **SSR:** the Home page shows "Signed in as …" from the session (server-rendered props). A minimal `/login` page posts through `fetch`; how much UI to build is D2.
+- **New config:** `TRUST_PROXY`, `CORS_ORIGINS`, `REDIS_URL` (optional: memory stores when unset), `METRICS_TOKEN`, `SESSION_IDLE_TIMEOUT`, `SESSION_ABSOLUTE_TIMEOUT`. `.env.example` is updated. There are no new required variables, so the app still starts with zero setup.
+
+---
+
+## 10. Test plan (what "done" means)
+
+Every item below is written as a failing test first, as in v0.1/v0.2:
+
+| Area | Key tests |
+|---|---|
+| Trusted proxy | spoofed `X-Forwarded-For` ignored by default; hop count and CIDR modes pick the right address; `X-Forwarded-Proto` only from trusted peers |
+| Cookies | set/delete appear on handler `Response`s and error responses; secure flag follows protocol |
+| Security headers | defaults present; HSTS only on https; CSP allows our SSR hydration (browser e2e, no violations) |
+| CORS | preflight allowed/denied; `Vary: Origin`; `*`+credentials throws |
+| CSRF | cross-site cookie POST → 403; same-origin passes; bearer/API-key requests exempt; safe methods exempt |
+| Passwords | argon2id; verify; `needsRehash`; unknown-user timing path executes a hash |
+| Sessions | fixation (new ID on login); idle and absolute expiry with an injected clock; only hashes stored; destroyAllFor; forged/expired cookie → 401 |
+| JWT | round-trip per alg; `none` rejected; alg-confusion (HS256 signed with an RS256 public key) rejected; exp/nbf/aud/iss; skew |
+| OIDC | discovery + JWKS against a local fake issuer; key rotation via unknown `kid`; refresh rate limit |
+| API keys | shown once; hashed at rest; revoked keys rejected; constant-time compare used |
+| Authorization | wildcard matching; 401 vs 403; self-or-permission rule in users service |
+| Cache | TTL, LRU eviction, JSON semantics, `remember` single-flight (1 load for 50 concurrent misses), namespaces; same suite against Redis when `TEST_REDIS_URL` set |
+| Rate limit | limit + 1 → 429 with headers; sliding window math with injected clock; fail-open vs fail-closed on store error; same suite against Redis |
+| Metrics | exposition format parses; route label uses pattern; cardinality cap; token protection; histogram buckets |
+| WebSockets | upgrade through middleware; auth failure → HTTP 401 (no upgrade); cross-origin upgrade → 403; room broadcast between two clients; payload limit; `stop()` closes with 1001 |
+| Reference app e2e | register → login (cookie) → /me → CSRF-protected PATCH → logout; login brute-force → 429; `/metrics` with/without token; WebSocket chat between two sessions |
+
+Postgres and Redis suites run when their `TEST_*_URL` is set. Before v0.3 is called done, both will be run locally against the installed Postgres 16 and Redis.
+
+---
+
+## 11. Implementation order
+
+Each step is a separate commit with its tests green:
+
+1. **Kernel:** `trustProxy`/`ctx.ip`/`ctx.protocol`, `ctx.route`, cookies, `TooManyRequestsError`, `_FILE` secrets.
+2. **Kernel:** `securityHeaders()`, `cors()`, trace context.
+3. `@bun-hydrate/cache` (memory → Redis).
+4. `@bun-hydrate/rate-limit` (memory → Redis).
+5. `@bun-hydrate/auth`:
+   - 5a. passwords
+   - 5b. principal + `authenticate`/`require*` + policies
+   - 5c. sessions + CSRF
+   - 5d. JWT
+   - 5e. API keys
+   - 5f. OIDC
+6. `@bun-hydrate/observability` (metrics).
+7. Kernel: WebSocket routes + shutdown.
+8. Testing helpers (cookie jar, `.ip()`, `connectWebSocket`, auth helpers), then `hydrate generate auth`.
+9. Reference app: auth module, protected users API, config, `/metrics`, WebSocket room, e2e and browser tests.
+10. Docs: README, `.env.example`, and a spec-5 "as built" pass recording deviations.
+
+---
+
+## 12. Risks found while writing this spec
+
+- **Redis subscriber shutdown:** in the probe, a `Bun.RedisClient` that had entered subscriber mode kept the process alive after `close()`. This matters for graceful shutdown (the "exit cleanly after SIGTERM" guarantee from v0.1). v0.3 doesn't need Redis pub/sub (fan-out is v0.4), and GET/SET/INCR/EVAL clients were not tested for this; the rate-limit and cache stores will get the same "process exits after stop" test the kernel has.
+- **Bun minifier:** labelled-statement bugs were already found in React bundles (spec-3 §11). Any new client code (the login page) goes through the same V8 syntax guard and browser e2e.
+- **Bun.CookieMap** is a relatively recent Bun API. It is used behind our own `ctx.cookies` interface, so it can be replaced without an API change if a bug shows up.
+
+---
+
+## 13. Decisions needed before implementation
+
+| # | Question | Options | Recommendation |
+|---|---|---|---|
+| D1 | OIDC scope in v0.3 | (a) resource server only: validate IdP-issued bearer tokens; (b) also the browser login flow (authorization code + PKCE, callback, state/nonce) | **(a)** now, (b) as v0.3.1. (a) covers APIs and SPAs using an IdP SDK; (b) roughly doubles the auth surface and needs a real IdP for e2e. |
+| D2 | Login UI in the reference app | (a) API only; (b) minimal SSR `/login` + "signed in as" on Home; (c) full register/login/logout pages | **(b)**: enough to prove cookies, CSRF and CSP in a real browser without becoming a UI project. |
+| D3 | Where `/metrics` is served | (a) same port, bearer token; (b) separate internal port (e.g. 9091) with no auth | **(a)** by default, with (b) as an option. (a) needs no infra change, and `deploy.sh`/security groups stay untouched. |
+| D4 | DB query duration metric | (a) instrument `db.sql` (wrap the tagged template; timing per query, labelled `select`/`insert`/…); (b) transaction-level timing only; (c) defer to v0.4 | **(a)**, but treated as the step most likely to slip: wrapping Bun.SQL's callable object must keep `db.sql(obj)`, `.unsafe`, and transactions working, and will get its own tests. |
+| D5 | Default session store in the reference app | (a) database (`sessions` table); (b) cache (memory, Redis when `REDIS_URL` set) | **(a)**: supports "sign out everywhere" and survives Redis restarts; the app already has a database. |
+| D6 | Package layout | (a) as proposed: `auth`, `cache`, `rate-limit`, `observability` as separate packages; (b) fewer, larger packages | **(a)**, matching spec-1 §3's list and "use only what you need" (§2.3). |
