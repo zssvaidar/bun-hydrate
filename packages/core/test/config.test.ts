@@ -95,6 +95,42 @@ describe("defineConfig", () => {
     expect(() => defineConfig({ p: env.port("P") }, { P: "70000" })).toThrow("expected a port number");
   });
 
+  test("reads <NAME>_FILE, as mounted by Docker and Kubernetes secrets", async () => {
+    const path = `${import.meta.dir}/fixtures/.secret-db-url`;
+    await Bun.write(path, "postgres://user:pw@db:5432/app\n");
+    try {
+      expect(defineConfig({ dbUrl: env.url("DATABASE_URL") }, { DATABASE_URL_FILE: path })).toEqual({
+        dbUrl: "postgres://user:pw@db:5432/app",
+      });
+    } finally {
+      await Bun.file(path).delete();
+    }
+  });
+
+  test("setting both NAME and NAME_FILE is an error", () => {
+    expect(() => defineConfig({ port: env.port("PORT") }, { PORT: "1", PORT_FILE: "/run/secrets/port" })).toThrow(
+      "PORT: set either PORT or PORT_FILE, not both",
+    );
+  });
+
+  test("an unreadable _FILE is reported without leaking contents", () => {
+    expect(() => defineConfig({ token: env.string("TOKEN") }, { TOKEN_FILE: "/definitely/missing" })).toThrow(
+      'TOKEN: cannot read TOKEN_FILE "/definitely/missing"',
+    );
+  });
+
+  test("a value read from a file is validated like any other, without echoing it", () => {
+    const path = `${import.meta.dir}/fixtures/.secret-port`;
+    require("node:fs").writeFileSync(path, "not-a-port");
+    try {
+      expect(() => defineConfig({ port: env.port("PORT") }, { PORT_FILE: path })).toThrow(
+        "PORT: expected a port number (0-65535), read from PORT_FILE",
+      );
+    } finally {
+      require("node:fs").rmSync(path);
+    }
+  });
+
   test("defaults to process.env when no source is given", () => {
     process.env.BUN_HYDRATE_TEST_VALUE = "from-process";
     try {

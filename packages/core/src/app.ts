@@ -1,4 +1,5 @@
 import type { Server } from "bun";
+import { ipMatcher, resolveClient, type TrustProxy } from "./client-ip";
 import { Context } from "./context";
 import { HttpError, MethodNotAllowedError, NotFoundError, toHttpError } from "./errors";
 import { healthHandler, readyHandler, type RegisteredCheck } from "./health";
@@ -15,7 +16,7 @@ import {
 import { createLogger, type Logger } from "./logger";
 import { compose } from "./middleware";
 import { REQUEST_ID_HEADER, resolveRequestId } from "./request-id";
-import { toResponse, withHeader, withoutBody } from "./response";
+import { appendHeader, toResponse, withHeader, withoutBody } from "./response";
 import { RouteTrie, type MatchResult } from "./route-trie";
 import { Router } from "./router";
 
@@ -27,6 +28,13 @@ export interface AppOptions {
   logRequests?: boolean;
   /** Register /health and /ready. Default: true. */
   health?: boolean;
+  /** Which proxies may report the client address and protocol (spec-5 §1.1). Default: false. */
+  trustProxy?: TrustProxy;
+}
+
+/** What `fetch` needs from Bun's server: the socket address of the peer. */
+export interface PeerSource {
+  requestIP(request: Request): { address: string } | null;
 }
 
 export type ErrorHandler = (
@@ -34,8 +42,11 @@ export type ErrorHandler = (
   ctx: Context,
 ) => Response | undefined | Promise<Response | undefined>;
 
-type RouteRunner = (ctx: Context) => Promise<Response>;
-type Dispatch = MatchResult<RouteRunner> | { kind: "error"; error: unknown };
+interface CompiledRoute {
+  pattern: string;
+  run: (ctx: Context) => Promise<Response>;
+}
+type Dispatch = MatchResult<CompiledRoute> | { kind: "error"; error: unknown };
 
 const SHUTDOWN_SIGNALS = ["SIGTERM", "SIGINT"] as const;
 const DEFAULT_READINESS_TIMEOUT_MS = 2_000;
@@ -50,7 +61,9 @@ export class App extends Router {
   private readonly lifecycle: Lifecycle;
   private readonly readinessChecks: RegisteredCheck[] = [];
   private errorHandler: ErrorHandler | undefined;
-  private compiled: { revision: number; table: RouteTrie<RouteRunner> } | undefined;
+  private compiled: { revision: number; table: RouteTrie<CompiledRoute> } | undefined;
+  private readonly trustProxy: TrustProxy;
+  private readonly isTrustedProxy: ((address: string) => boolean) | undefined;
   private stopping: Promise<void> | undefined;
   private readonly onSignal = () => void this.stop();
 
@@ -60,6 +73,8 @@ export class App extends Router {
     this.exposeErrors = options.exposeErrors ?? process.env.NODE_ENV === "development";
     this.logRequests = options.logRequests ?? true;
     this.lifecycle = new Lifecycle(this.logger);
+    this.trustProxy = options.trustProxy ?? false;
+    this.isTrustedProxy = Array.isArray(this.trustProxy) ? ipMatcher(this.trustProxy) : undefined;
 
     if (options.health ?? true) {
       this.get("/health", healthHandler(Date.now()));
@@ -151,19 +166,26 @@ export class App extends Router {
     this.logger.info("Stopped");
   }
 
-  /** The web-standard entry point: `Bun.serve({ fetch: app.fetch })`, and what the test client calls. */
-  readonly fetch = async (request: Request): Promise<Response> => {
+  /**
+   * The web-standard entry point: `Bun.serve({ fetch: app.fetch })`, and what the test client calls.
+   * `server` supplies the socket address; in-process callers may omit it or pass a stand-in.
+   */
+  readonly fetch = async (request: Request, server?: PeerSource): Promise<Response> => {
     const startedAt = performance.now();
     const requestId = resolveRequestId(request.headers.get(REQUEST_ID_HEADER));
     const dispatch = this.match(request);
+    const client = resolveClient(request, server?.requestIP(request)?.address, this.trustProxy, this.isTrustedProxy);
     const ctx = new Context(request, {
       params: dispatch.kind === "found" ? dispatch.params : {},
+      route: dispatch.kind === "found" ? dispatch.value.pattern : undefined,
       requestId,
       log: this.logger.child({ requestId }),
+      ...client,
     });
 
     let response = await compose(this.ownMiddleware, () => this.run(dispatch, ctx), this.handleError)(ctx);
 
+    for (const cookie of ctx.cookies.changes()) response = appendHeader(response, "set-cookie", cookie);
     if (request.method === "HEAD") response = withoutBody(response);
     response = withHeader(response, REQUEST_ID_HEADER, requestId);
     if (this.logRequests) this.logRequest(ctx, response, startedAt);
@@ -181,7 +203,7 @@ export class App extends Router {
   private async run(dispatch: Dispatch, ctx: Context): Promise<Response> {
     switch (dispatch.kind) {
       case "found":
-        return dispatch.value(ctx);
+        return dispatch.value.run(ctx);
       case "method-not-allowed":
         if (ctx.method === "OPTIONS") {
           return new Response(null, { status: 204, headers: { allow: dispatch.allowed.join(", ") } });
@@ -194,12 +216,15 @@ export class App extends Router {
     }
   }
 
-  private routeTable(): RouteTrie<RouteRunner> {
+  private routeTable(): RouteTrie<CompiledRoute> {
     if (this.compiled?.revision !== this.revision) {
-      const table = new RouteTrie<RouteRunner>();
+      const table = new RouteTrie<CompiledRoute>();
       for (const route of this.collectRoutes()) {
         const runHandler = async (ctx: Context) => toResponse(await route.handler(ctx), ctx);
-        table.add(route.method, route.path, compose(route.middleware, runHandler, this.handleError));
+        table.add(route.method, route.path, {
+          pattern: route.path,
+          run: compose(route.middleware, runHandler, this.handleError),
+        });
       }
       this.compiled = { revision: this.revision, table };
     }
@@ -246,6 +271,7 @@ export class App extends Router {
     const fields = {
       method: ctx.method,
       path: ctx.path,
+      route: ctx.route,
       status: response.status,
       durationMs: Math.round((performance.now() - startedAt) * 100) / 100,
     };

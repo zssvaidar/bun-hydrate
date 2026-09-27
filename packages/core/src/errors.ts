@@ -86,6 +86,16 @@ export class ValidationError extends HttpError {
   }
 }
 
+export class TooManyRequestsError extends HttpError {
+  /** `retryAfter` is in seconds and becomes the Retry-After header. */
+  constructor(message = "Too Many Requests", options: HttpErrorOptions & { retryAfter?: number } = {}) {
+    const { retryAfter, ...rest } = options;
+    const headers = new Headers(rest.headers);
+    if (retryAfter !== undefined) headers.set("retry-after", String(Math.max(0, Math.ceil(retryAfter))));
+    super(429, message, { ...rest, headers });
+  }
+}
+
 export class InternalServerError extends HttpError {
   constructor(message = "Internal Server Error", options?: HttpErrorOptions) {
     super(500, message, options);

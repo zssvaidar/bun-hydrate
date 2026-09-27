@@ -26,6 +26,18 @@ export function withHeader(response: Response, name: string, value: string): Res
   }
 }
 
+/** Like withHeader, but appends (for headers that repeat, such as Set-Cookie). */
+export function appendHeader(response: Response, name: string, value: string): Response {
+  try {
+    response.headers.append(name, value);
+    return response;
+  } catch {
+    const copy = new Response(response.body, response);
+    copy.headers.append(name, value);
+    return copy;
+  }
+}
+
 export function withoutBody(response: Response): Response {
   if (response.body === null) return response;
   void response.body.cancel();

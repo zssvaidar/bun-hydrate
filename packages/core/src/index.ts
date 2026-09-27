@@ -1,8 +1,10 @@
-export { App, type AppOptions, type ErrorHandler } from "./app";
+export { App, type AppOptions, type ErrorHandler, type PeerSource } from "./app";
+export { ipMatcher, resolveClient, type TrustProxy, type ClientInfo } from "./client-ip";
+export { Cookies, type CookieOptions } from "./cookies";
 export { Router, joinPaths, type Handler, type PathParams, type RouteDefinition } from "./router";
 export { Context, RequestBody, type ContextState, type RedirectStatus } from "./context";
 export { compose, type Middleware, type Next } from "./middleware";
-export { toResponse, withHeader, type HandlerResult } from "./response";
+export { toResponse, withHeader, appendHeader, type HandlerResult } from "./response";
 export {
   HttpError,
   BadRequestError,
@@ -12,6 +14,7 @@ export {
   MethodNotAllowedError,
   ConflictError,
   ValidationError,
+  TooManyRequestsError,
   InternalServerError,
   toHttpError,
   type HttpErrorOptions,

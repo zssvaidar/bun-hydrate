@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs";
+
 export type EnvSource = Record<string, string | undefined>;
 
 type ParseResult<T> = { ok: true; value: T } | { ok: false; expected: string };
@@ -22,8 +24,7 @@ export class EnvVar<T> {
   }
 
   /** @internal */
-  resolve(source: EnvSource): ParseResult<T> | { ok: false; missing: true } {
-    const raw = source[this.key];
+  resolve(raw: string | undefined): ParseResult<T> | { ok: false; missing: true } {
     if (raw === undefined || raw === "") {
       if (this.fallback.kind === "default") return { ok: true, value: this.fallback.value };
       if (this.fallback.kind === "optional") return { ok: true, value: undefined as T };
@@ -107,21 +108,46 @@ export function defineConfig<Shape extends ConfigShape>(
   const issues: ConfigIssue[] = [];
 
   for (const [name, variable] of Object.entries(shape)) {
-    const result = variable.resolve(source);
+    const raw = readRaw(variable.key, source);
+    if ("problem" in raw) {
+      issues.push({ key: variable.key, problem: raw.problem });
+      continue;
+    }
+
+    const result = variable.resolve(raw.value);
     if (result.ok) {
       config[name] = result.value;
     } else if ("missing" in result) {
       issues.push({ key: variable.key, problem: `required but not set${caseMismatchHint(variable.key, source)}` });
     } else {
-      issues.push({
-        key: variable.key,
-        problem: `expected ${result.expected}, received ${JSON.stringify(source[variable.key])}`,
-      });
+      // Values read from secret files are never echoed back into logs or errors.
+      const received = raw.fromFile ? `read from ${variable.key}_FILE` : `received ${JSON.stringify(raw.value)}`;
+      issues.push({ key: variable.key, problem: `expected ${result.expected}, ${received}` });
     }
   }
 
   if (issues.length > 0) throw new ConfigError(issues);
   return Object.freeze(config) as InferConfig<Shape>;
+}
+
+/**
+ * `NAME` directly, or the contents of the file named by `NAME_FILE` — how Docker and Kubernetes
+ * mount secrets (spec-5 §1.6). Setting both is ambiguous, so it is an error.
+ */
+function readRaw(
+  key: string,
+  source: EnvSource,
+): { value: string | undefined; fromFile: boolean } | { problem: string } {
+  const direct = source[key];
+  const filePath = source[`${key}_FILE`];
+  if (!filePath) return { value: direct, fromFile: false };
+  if (direct) return { problem: `set either ${key} or ${key}_FILE, not both` };
+
+  try {
+    return { value: readFileSync(filePath, "utf8").replace(/\r?\n$/, ""), fromFile: true };
+  } catch {
+    return { problem: `cannot read ${key}_FILE "${filePath}"` };
+  }
 }
 
 function caseMismatchHint(key: string, source: EnvSource): string {

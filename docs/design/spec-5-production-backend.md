@@ -1,7 +1,7 @@
 # bun-hydrate Spec 5 — Production Backend Detailed Design (v0.3)
 
 **Document:** `spec-5`
-**Status:** Draft (rev. 2: React auth integration §8, feature orchestration §9) — for review before implementation
+**Status:** Accepted (rev. 2) — decisions D1–D10 taken as recommended
 **Builds on:** `spec-1` §28 (v0.3: authentication, authorization, logging, request IDs, metrics, rate limiting, caching, WebSockets), `spec-2` §2.2/§2.4 (security baseline FR-220–227, tracing FR-242, WebSocket fan-out FR-241, shutdown scope FR-243), `spec-3` (kernel), `spec-4` (validation, DI, database)
 **Out of scope:** `Jenkinsfile` and `deploy.sh` (unchanged); queues, jobs, events and multi-instance WebSocket fan-out (v0.4)
 

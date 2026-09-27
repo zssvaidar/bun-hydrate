@@ -1,4 +1,5 @@
 import type { BunFile } from "bun";
+import { Cookies } from "./cookies";
 import { BadRequestError, NotFoundError } from "./errors";
 import type { Logger } from "./logger";
 
@@ -52,6 +53,9 @@ export interface ContextInit<Params> {
   params: Params;
   requestId: string;
   log: Logger;
+  ip?: string;
+  protocol?: "http" | "https";
+  route?: string;
 }
 
 export class Context<Params = Record<string, string>> {
@@ -66,6 +70,12 @@ export class Context<Params = Record<string, string>> {
   readonly log: Logger;
   readonly state: ContextState = {};
   readonly body: RequestBody;
+  /** Client address, resolved through trusted proxies only (spec-5 §1.1). */
+  readonly ip: string;
+  readonly protocol: "http" | "https";
+  /** The matched route pattern, e.g. "/users/:id"; undefined when nothing matched. */
+  readonly route: string | undefined;
+  readonly cookies: Cookies;
 
   private pendingStatus: number | undefined;
   private readonly pendingHeaders = new Headers();
@@ -81,6 +91,10 @@ export class Context<Params = Record<string, string>> {
     this.requestId = init.requestId;
     this.log = init.log;
     this.body = new RequestBody(request);
+    this.ip = init.ip ?? "127.0.0.1";
+    this.protocol = init.protocol ?? (this.url.protocol === "https:" ? "https" : "http");
+    this.route = init.route;
+    this.cookies = new Cookies(request.headers.get("cookie"), this.protocol === "https");
   }
 
   /** Sets the status used by the response builders and by plain return values. */
