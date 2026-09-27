@@ -9,7 +9,8 @@
     "./database": "./src/database.ts",
     "./auth": "./src/auth.ts",
     "./queue": "./src/queue.ts",
-    "./storage": "./src/storage.ts"
+    "./storage": "./src/storage.ts",
+    "./s3": "./src/s3.ts"
   },
   "peerDependencies": {
     "@bun-hydrate/core": "workspace:*",

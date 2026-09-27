@@ -31,8 +31,16 @@ export interface SignedUrlOptions {
   download?: string;
 }
 
+/** What a listing knows about each object (S3 listings carry no content type). */
+export interface ObjectSummary {
+  key: string;
+  size: number;
+  etag: string;
+  lastModified: Date;
+}
+
 export interface ListPage {
-  items: ObjectInfo[];
+  items: ObjectSummary[];
   nextCursor: string | null;
 }
 
@@ -152,7 +160,7 @@ class ScopedStorage implements Storage {
   }
 
   private inner = (key: string) => this.prefix + validateKey(key);
-  private outer = <T extends ObjectInfo | null>(info: T): T => (info ? { ...info, key: info.key.slice(this.prefix.length) } : info);
+  private outer = <T extends ObjectSummary | null>(info: T): T => (info ? { ...info, key: info.key.slice(this.prefix.length) } : info);
 
   async put(key: string, body: StorageBody, options?: PutOptions) {
     return this.outer(await this.parent.put(this.inner(key), body, options));
