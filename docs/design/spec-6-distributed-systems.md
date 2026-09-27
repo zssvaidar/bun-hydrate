@@ -1,7 +1,7 @@
 # bun-hydrate Spec 6: Distributed Systems Detailed Design (v0.4)
 
 **Document:** `spec-6`
-**Status:** Proposed. Decisions D1–D12 (§17) are needed before implementation.
+**Status:** Accepted. Decisions D1–D12 (§17) taken as recommended.
 **Builds on:**
 - `spec-1` §14 (FR-090 jobs, FR-091 workers), §15 (FR-100 events), §23 (FR-180 storage) and §28 (v0.4: jobs, workers, events, Redis, queue adapters, storage adapters).
 - `spec-2` FR-232 (uploads, left over from v0.2), FR-240 (process model), FR-241 (WebSocket fan-out), FR-242 (trace propagation into jobs and events) and FR-243 (shutdown scope).
