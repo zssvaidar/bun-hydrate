@@ -28,3 +28,20 @@ export {
   type SessionRecord,
 } from "./sessions/store";
 export { randomToken, sha256Hex } from "./tokens";
+export {
+  signJwt,
+  verifyJwt,
+  hmacKey,
+  generateJwtKeyPair,
+  importJwk,
+  jwtStrategy,
+  claimsToPrincipal,
+  bearerToken,
+  JwtError,
+  type JwtKey,
+  type JwtAlgorithm,
+  type JwtClaims,
+  type SignOptions,
+  type VerifyOptions,
+  type JwtStrategyOptions,
+} from "./jwt";
