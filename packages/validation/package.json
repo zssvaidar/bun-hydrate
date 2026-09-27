@@ -1,0 +1,13 @@
+{
+  "name": "@bun-hydrate/validation",
+  "version": "0.1.0",
+  "description": "Schema validation with Standard Schema interop and typed route input.",
+  "license": "MIT",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "peerDependencies": {
+    "@bun-hydrate/core": "workspace:*"
+  }
+}
