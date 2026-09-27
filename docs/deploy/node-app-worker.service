@@ -1,0 +1,31 @@
+# A systemd unit for the worker process (spec-6 §12.4), next to the existing node-app.service
+# that deploy.sh restarts. deploy.sh is unchanged: adopting this unit means installing it once
+# on the host and adding `sudo systemctl restart node-app-worker` after the web restart there.
+#
+#   sudo cp docs/deploy/node-app-worker.service /etc/systemd/system/
+#   sudo systemctl daemon-reload && sudo systemctl enable --now node-app-worker
+#
+# It runs the same release as the web process (the "current" symlink), as the same user, with
+# the same environment. The worker never migrates; the web process or a deploy step does.
+
+[Unit]
+Description=bun-hydrate worker (jobs and durable event listeners)
+After=network-online.target node-app.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=nodeapp
+WorkingDirectory=/opt/app/current
+# Use the same EnvironmentFile as node-app.service (DATABASE_URL, STORAGE_SIGNING_KEY, …).
+EnvironmentFile=-/opt/app/.env
+Environment=NODE_ENV=production
+ExecStart=/usr/local/bin/bun dist/worker.js
+Restart=on-failure
+RestartSec=5
+# SIGTERM: stop claiming, wait up to 25s for jobs in flight, release the rest, exit 0.
+KillSignal=SIGTERM
+TimeoutStopSec=35
+
+[Install]
+WantedBy=multi-user.target

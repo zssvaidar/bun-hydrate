@@ -238,6 +238,7 @@ describe("loadConfig", () => {
       databaseUrl: "sqlite://:memory:",
       migrateOnStart: false,
       trustProxy: false,
+      maxBodySize: 10 * 1024 * 1024,
       outboxPath: "data/outbox.jsonl",
       redisUrl: undefined,
       redisPrefix: "bun-hydrate:",
@@ -248,6 +249,11 @@ describe("loadConfig", () => {
     expect(loadConfig({ TRUST_PROXY: "1" }).trustProxy).toBe(1);
     expect(loadConfig({ TRUST_PROXY: "10.0.0.0/8, 127.0.0.1" }).trustProxy).toEqual(["10.0.0.0/8", "127.0.0.1"]);
     expect(loadConfig({ TRUST_PROXY: "false" }).trustProxy).toBe(false);
+  });
+
+  test("MAX_BODY_SIZE takes a size", () => {
+    expect(loadConfig({ MAX_BODY_SIZE: "512kb" }).maxBodySize).toBe(512 * 1024);
+    expect(() => loadConfig({ MAX_BODY_SIZE: "huge" })).toThrow('MAX_BODY_SIZE: expected a size such as "10mb" or "512kb"');
   });
 
   test("rejects invalid values at startup", () => {

@@ -94,7 +94,7 @@ describe("web and worker processes from dist/", () => {
     "registering sends the welcome mail from the separate worker process; SIGTERM stops it cleanly",
     async () => {
       const worker = await startWorker();
-      expect((await (await fetch(new URL("/ready", worker.url))).json()).checks).toEqual({});
+      expect((await (await fetch(new URL("/ready", worker.url))).json()).checks).toEqual({ database: "ok" });
 
       const ada = session(web);
       expect((await ada.request("POST", "/api/v1/auth/register", { email: "ada@example.com", password: "correct horse battery" })).status).toBe(201);

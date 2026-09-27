@@ -37,7 +37,9 @@ const config = loadWorkerConfig();
 const db = createDatabase({ url: config.databaseUrl });
 const container = createContainer({ config, db });
 // Stop hooks run in reverse: the database, registered first, closes last.
-const app = new App({ logger: createLogger({ level: config.logLevel, format: config.logFormat }) }).onStop(() => db.close());
+const app = new App({ logger: createLogger({ level: config.logLevel, format: config.logFormat }) })
+  .readinessCheck("database", () => db.ping())
+  .onStop(() => db.close());
 
 // The web process migrates (MIGRATE_ON_START or `hydrate db:migrate`); a worker never runs on an older schema.
 app.onStart(async () => {

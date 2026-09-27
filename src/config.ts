@@ -1,4 +1,4 @@
-import { EnvVar, defineConfig, env, type EnvSource, type TrustProxy } from "@bun-hydrate/core";
+import { EnvVar, defineConfig, env, parseSize, type EnvSource, type Size, type TrustProxy } from "@bun-hydrate/core";
 
 /**
  * TRUST_PROXY: "false" (default; the socket address is the client), a hop count such as "1"
@@ -12,6 +12,15 @@ const trustProxy = new EnvVar<TrustProxy>("TRUST_PROXY", (raw) => {
   return entries.length > 0 ? { ok: true, value: entries } : { ok: false, expected: '"false", a hop count or a list of CIDRs' };
 }).default(false);
 
+/** MAX_BODY_SIZE: bytes, or "512kb", "10mb", … */
+const maxBodySize = new EnvVar<number>("MAX_BODY_SIZE", (raw) => {
+  try {
+    return { ok: true, value: parseSize(raw as Size) };
+  } catch {
+    return { ok: false, expected: 'a size such as "10mb" or "512kb"' };
+  }
+}).default(parseSize("10mb"));
+
 export function loadConfig(source: EnvSource = process.env) {
   return defineConfig(
     {
@@ -22,6 +31,8 @@ export function loadConfig(source: EnvSource = process.env) {
       databaseUrl: env.string("DATABASE_URL").default("sqlite://:memory:"),
       migrateOnStart: env.boolean("MIGRATE_ON_START").default(false),
       trustProxy,
+      // Largest request body the server accepts; routes can only lower it with bodyLimit().
+      maxBodySize,
       // Where LogMailer writes mail (src/shared/mailer.ts).
       outboxPath: env.string("OUTBOX_PATH").default("data/outbox.jsonl"),
       // Optional: chat rooms then reach clients on every instance (spec-6 §9).

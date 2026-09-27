@@ -1,7 +1,7 @@
 # bun-hydrate Spec 6: Distributed Systems Detailed Design (v0.4)
 
 **Document:** `spec-6`
-**Status:** Accepted. Decisions D1–D12 (§17) taken as recommended.
+**Status:** Implemented (v0.4). Decisions D1–D12 (§17) were taken as recommended; the deviations are recorded in §20 "As built".
 **Builds on:**
 - `spec-1` §14 (FR-090 jobs, FR-091 workers), §15 (FR-100 events), §23 (FR-180 storage) and §28 (v0.4: jobs, workers, events, Redis, queue adapters, storage adapters).
 - `spec-2` FR-232 (uploads, left over from v0.2), FR-240 (process model), FR-241 (WebSocket fan-out), FR-242 (trace propagation into jobs and events) and FR-243 (shutdown scope).
@@ -635,3 +635,95 @@ Each step is a separate commit with its tests green:
 - **Handlers that ignore `job.signal`** can outlive their lease and run twice. This is inherent to at-least-once delivery. It is mitigated by lease renewal, by discarding results from expired leases, and by the idempotency guidance; it cannot be eliminated.
 - **`Bun.S3Client` compatibility** across providers is only as good as Bun's implementation. The contract suite runs against a fake server always and a real bucket when configured. Provider quirks found later go to the as-built pass.
 - **In-memory multipart parsing** limits uploads to the body cap. Large files should use presigned direct uploads; the docs show how.
+
+---
+
+## 20. As built
+
+Every item in §18 was built test first. The full suite (`bun test` with `TEST_POSTGRES_URL` and `TEST_REDIS_URL` against Postgres 16 and Redis) gives 1004 passing tests, 3 skipped and none failing. The skipped tests cover modes that are not installed: the reference app's JWT login (it uses sessions) and a Postgres-only migrator case in its SQLite run. Where the build differs from the design above, this section says how and why.
+
+### 20.1 Queue and workers
+
+| Topic | Spec | As built, and why |
+|---|---|---|
+| Database adapter dialects | SQLite, Postgres, MySQL (§5.3, §18 step 5) | SQLite and Postgres. `DatabaseQueueAdapter` refuses MySQL with a clear error: no MySQL server was available to prove its claim SQL, and an unproven claim query is the one place a queue must not guess. |
+| Maintenance lease | One worker at a time runs maintenance | There is no lease. Every worker runs `requeueExpired` and `purge` on its interval: both are idempotent single statements (or Lua scripts), so running them twice is harmless and one less lock exists. |
+| Redis wake-up | `BLMOVE` | Pub/sub on a notify channel (`onWake`). A blocking pop cannot honour D12, because workers claim only names they handle. |
+| Redis pending sets | Per queue | Per queue **and job name** (`pending:<queue>:<name>`), so a claim reads only the names the worker can run. Claims walk ten priority bands in one Lua script. |
+| Worker health | `createWorker({ health: { port } })` | There is no `health` option. The scaffolded `src/worker.ts` builds an `App` without routes, runs the worker in it with `startWorkerIn(app, …)`, and calls `app.listen({ port: WORKER_PORT })` or `app.run()`. The worker gets the App's lifecycle, signals, `/health`, `/ready` (database, plus Redis when installed), `/metrics` and shutdown phases for free. |
+| Pending migrations | The worker refuses the features it depends on | The scaffolded worker refuses **any** pending migration (`Migrator.status()` at start). This is simpler and stricter, and a web process with `MIGRATE_ON_START` or a deploy step clears it. |
+| Shutdown phases | `onDrain` and `onDisconnect` | `onDrain` only. Unsubscribing pub/sub is built into `App.stop()`. Connections close through stop hooks, which run in reverse order, so the database (registered first) closes last. |
+| Exit after a signal | "exits 0 within the timeout" | Both `App` and a standalone `Worker` call `process.exit(0)` once a signal-triggered graceful stop completes. A handler that ignores `job.signal` (or any stray timer) would otherwise hold the process open until the orchestrator's SIGKILL. `stop()` called from code never exits. |
+| `QUEUE_POLL_MAX_INTERVAL` | Env variable | Not read by the scaffold; `createWorker({ poll: { min, max } })` takes it. The Redis adapter's wake-ups make the poll interval matter little. |
+| `createTestQueue().runAll()` | — | Waits only for due jobs its handlers can run: a job no handler runs is never claimed (D12), so waiting for it would hang. |
+
+### 20.2 Events
+
+- **Duplicate names.** `defineEvent` keeps no global registry. A bus rejects two *different* definitions with the same name when they are registered, which is where a clash can do harm.
+- **Broadcast transport.** The generated `src/events/bus.ts` creates the bus without a transport, so `broadcast()` reaches only this instance until the app passes `transport: container.get(AppRedis)` and calls `events.listen()`. The file says how. Wiring it automatically would make `events` depend on `redis`.
+
+### 20.3 Storage and uploads
+
+| Topic | Spec | As built, and why |
+|---|---|---|
+| `PutOptions` | Content type, disposition, metadata | Content type and disposition only. `Bun.S3Client` cannot set custom object metadata, and one interface must behave the same on every adapter. |
+| `list()` items | `ObjectInfo` | `ObjectSummary` (key, size, etag, lastModified). S3 listings carry no content type, and fetching it would cost a HEAD per object. |
+| `bodyLimit()` | Raise or lower the limit per route | Lower only. `maxBodySize` is also Bun's `maxRequestBodySize`, the server-wide cap enforced before any middleware runs, so a route cannot raise it. Raise `MAX_BODY_SIZE` and lower it elsewhere instead. |
+| `MAX_BODY_SIZE` | Core reads it | Core takes `new App({ maxBodySize })`. The reference app's config reads `MAX_BODY_SIZE` and passes it, like every other setting. |
+| Large uploads | "the docs show" presigned direct uploads | Not documented yet. `S3Storage.signedUrl()` presigns GET only, and presigned PUT is left for a later version. |
+| Docker example | `storage:s3` | `storage:local` on a volume shared by both web instances. The reference app installs `storage:local`; the compose file says how to switch. |
+
+### 20.4 Core
+
+- **`app.publish()` is async.** It goes through the `PubSub` adapter, so a Redis failure rejects the call instead of being lost.
+- **`app.usePubSub()` and `app.run()`.** Generated platform code runs after the `App` is constructed, so fan-out is set with `usePubSub()` before `listen()`. `run()` starts the lifecycle without a port, for workers.
+- **Client bundles.** `@bun-hydrate/react` pulled core into the browser bundle, and core's `AsyncLocalStorage` crashed there. The trace context now creates its storage lazily, and pages import `definePages` from the browser-safe `@bun-hydrate/react/pages`. A reference-app test fails if core, the renderer or `node:` modules reach the client bundle again.
+
+### 20.5 CLI
+
+- **`realtime:redis`** calls `app.usePubSub(redisPubSub(AppRedis))` from `installPlatform`, where the spec had a `pubsub:` option.
+- **`jobs:*` commands** build a container on the command's database and run the app's own `installPlatform`, so they see exactly the queue (and Redis) the web and worker processes use. `jobs:status` lists pending jobs with no handler **in this code base**, since it cannot see which workers are running.
+- **Two features, one command.** `jobs:database` and `jobs:redis` both provide `jobs:*`, and the CLI runs the installed one. Commands also gained `ctx.readInput()` for `--payload-stdin`.
+- **Generators.**
+  - `generate job` records `extra["job:<name>"]`; `generate listener` records `extra["listener:<name>"]`, so listener names are unique in the app.
+  - `generate event` records nothing: events need no registry.
+  - `jobs:forget` was not built. Forgetting a job means deleting its file and its `extra` entry, then running `hydrate sync`.
+- **Worker flags.** `hydrate worker --queues a,b --concurrency n` sets `WORKER_QUEUES` and `WORKER_CONCURRENCY` for the child process.
+- **Older templates.** `cache:redis` now requires `redis` and uses the shared connection. `hydrate doctor` notes an unedited file that comes from an older template.
+- **Build errors.** `hydrate build` prints the bundler's reasons: Bun rejects with an `AggregateError` whose own message is empty.
+
+### 20.6 Reference app
+
+- **Features.** Added with `bun hydrate add jobs:database events storage:local`. The generated files are committed unchanged, except `src/auth/login/login.routes.ts`, which emits `account.registered`; `hydrate doctor` reports only that.
+- **Welcome mail.** The durable `welcome-email` listener dispatches `send-welcome-email` with the idempotency key `welcome-email:<account id>`, so a retried listener never mails twice. `LogMailer` appends to `OUTBOX_PATH`.
+- **Session cleanup.** `cleanup-expired-sessions` runs hourly and calls the new `SessionManager.purgeExpired()` (auth). It deletes sessions past their absolute or idle limit.
+- **Redis fan-out.** Wired by hand in `src/app.ts` when `REDIS_URL` is set, not through the `redis`/`realtime:redis` features: those make `REDIS_URL` required, and the app must run without Redis locally.
+- **Shared container.** `src/container.ts` holds `Database`, `Clock` and `Mailer`, and both `src/app.ts` and `src/worker.ts` use it. The worker also calls `auth.register(container)` for `SessionManager`.
+- **SIGTERM mid-job.**
+  - It is proven at the package level, with real processes (`packages/queue/test/process.test.ts`): SIGTERM releases the job with its attempt uncounted, and after SIGKILL another worker completes it on attempt 2.
+  - The reference-app e2e proves the operational side: the built worker exits 0 on SIGTERM, and mail queued while no worker runs is delivered after a restart.
+  - The app has no deliberately slow job to interrupt.
+- **Docker.** No Docker daemon was available to run `docs/deploy/docker-compose.yml`. Its topology was run directly instead: two built web instances and a built worker on Postgres 16 and Redis, with the first instance migrating on start. Readiness was green, and a registration on one instance was mailed by the worker.
+
+### 20.7 Bun 1.3.11 behaviour found along the way
+
+- **Redis pub/sub:**
+  - Closing a subscribed `RedisClient` keeps the process alive; unsubscribe first.
+  - `unsubscribe()` throws synchronously once the client has left subscriber mode.
+  - `psubscribe` takes no listener, so fan-out uses one envelope channel (`{ topic, text | binary }`).
+  - A subscribed client refuses other commands, so `@bun-hydrate/redis` keeps a second connection for them.
+- **SQL:**
+  - `Bun.SQL` has no `LISTEN` (hence D5).
+  - SQLite 3.51 supports `UPDATE … RETURNING`, and Postgres claims use `FOR UPDATE SKIP LOCKED`.
+  - `ON CONFLICT DO NOTHING RETURNING` and `${sql(array)}` inside `IN (…)` work on both.
+- **Files:**
+  - `Bun.write(path, new Response(stream))` never settles, so streams are written through a `FileSink`.
+  - `new File([existingFile], name)` keeps the old file's name; `file.slice()` gives a nameless blob.
+  - Bun appends `;charset=utf-8` to text content types.
+- **`Bun.randomUUIDv7(encoding?, timestamp?)`:** the timestamp is the second argument.
+- **`Bun.S3Client`:**
+  - It cannot set custom metadata.
+  - A missing key raises `S3Error` with code `NoSuchKey`.
+  - Stream bodies upload as multipart (`POST ?uploads`, `PUT` parts, `POST` complete).
+  - Requests are path-style, which the fake S3 server mirrors.
+- **`Bun.build` failures** reject with an `AggregateError` whose message is only "Bundle failed". The reasons are in `.errors`.

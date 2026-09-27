@@ -14,13 +14,21 @@ This repository contains the framework packages and a reference application buil
 | `@bun-hydrate/auth` | Passwords (argon2id), sessions, CSRF, JWT, OIDC bearer tokens, API keys, permissions and policies, `createAuth` |
 | `@bun-hydrate/cache` | JSON cache with memory (LRU + TTL) and Redis adapters, single-flight `remember()` |
 | `@bun-hydrate/rate-limit` | Sliding-window limits with `RateLimit` headers, memory and Redis stores |
-| `@bun-hydrate/observability` | Prometheus metrics: HTTP by route, process, cache, rate limits, query timing |
-| `@bun-hydrate/testing` | In-process HTTP test client with a cookie jar, `spawnServer`, `connectWebSocket`, `createTestDatabase`, auth helpers |
-| `@bun-hydrate/cli` | `hydrate dev \| build \| start \| generate \| db:*` and feature orchestration: `features \| add \| remove \| doctor \| sync` |
+| `@bun-hydrate/observability` | Prometheus metrics: HTTP by route, process, cache, rate limits, query timing, jobs, events, fan-out, storage |
+| `@bun-hydrate/redis` | One Redis per process: shared command client, subscriber connection, key prefixing, clean shutdown |
+| `@bun-hydrate/queue` | Background jobs: `defineJob`, dispatch (transactional with the database queue), workers with leases, retries, timeouts and cron; memory, database and Redis adapters |
+| `@bun-hydrate/events` | Typed events: in-process listeners after commit, durable listeners as jobs, broadcasts across instances |
+| `@bun-hydrate/storage` | Files: memory, local disk (signed URLs) and S3 adapters behind one `Storage` interface |
+| `@bun-hydrate/testing` | In-process HTTP test client with a cookie jar, `spawnServer`, `connectWebSocket`, `createTestDatabase`, auth helpers, `createTestQueue`, queue and storage contract suites, a fake S3 |
+| `@bun-hydrate/cli` | `hydrate dev \| worker \| build \| start \| generate \| db:*` and feature orchestration: `features \| add \| remove \| doctor \| sync` |
 
-The kernel also covers trusted proxies (`ctx.ip`, `ctx.protocol`), cookies, security headers (on by default), CORS, W3C trace context and WebSocket routes.
+The kernel also covers:
+- trusted proxies (`ctx.ip`, `ctx.protocol`), cookies, security headers (on by default) and CORS;
+- W3C trace context, carried into jobs and event listeners;
+- WebSocket routes with fan-out across instances;
+- request body limits and checked file uploads.
 
-The design lives in [`docs/design`](docs/design): spec-2 is the gap analysis, spec-3 the kernel, spec-4 the backend foundation (validation, DI, database) and spec-5 production concerns (auth, caching, rate limits, metrics, WebSockets, feature orchestration).
+The design lives in [`docs/design`](docs/design): spec-2 is the gap analysis, spec-3 the kernel, spec-4 the backend foundation (validation, DI, database) spec-5 production concerns (auth, caching, rate limits, metrics, WebSockets, feature orchestration) and spec-6 distributed systems (jobs, workers, events, storage, uploads, fan-out).
 
 ## Quick start
 
@@ -33,15 +41,18 @@ bun run dev          # http://localhost:3000, reloads on change
 | Command | What it does |
 |---|---|
 | `bun run dev` | Runs `src/main.ts` with `NODE_ENV=development`, client bundled in memory |
-| `bun run build` | Writes a self-contained `dist/` (`index.js`, `public/assets/*`, `manifest.json`) |
+| `bun hydrate worker` | Runs `src/worker.ts` (jobs and durable listeners) with reload on change |
+| `bun run build` | Writes a self-contained `dist/` (`index.js`, `worker.js`, `public/assets/*`, `manifest.json`) |
 | `bun run start` | Runs `dist/index.js` with `NODE_ENV=production` |
 | `bun test` | Unit, integration and end-to-end tests (see below) |
 | `bun hydrate generate module <name> [--auth]` | Scaffold a module (schema, repository, service, controller, routes, test) and its migration; `--auth` guards its routes with permissions |
+| `bun hydrate generate job \| event \| listener` | A job and its test, a typed event, or a listener (`--durable` runs it as a job); the registries regenerate |
+| `bun hydrate jobs:status` / `jobs:dead` / `jobs:retry` / `jobs:purge` / `jobs:dispatch` | Inspect and operate the job queue |
 | `bun hydrate add <feature>` / `remove` / `features` / `doctor` / `sync` | Add or remove capabilities such as auth, metrics or rate limiting (see below) |
 | `bun hydrate db:migrate` / `db:rollback` / `db:status` / `db:seed` | Manage the database named by `DATABASE_URL` |
 | `bun run typecheck` | Strict TypeScript check |
 
-The built `dist/` needs no `node_modules`, so `bun dist/index.js` runs anywhere Bun is installed. The deploy scripts (`build.sh`, `deploy.sh`, `Jenkinsfile`) rely on this.
+The built `dist/` needs no `node_modules`, so `bun dist/index.js` and `bun dist/worker.js` run anywhere Bun is installed. The deploy scripts (`build.sh`, `deploy.sh`, `Jenkinsfile`) rely on this. [`docs/deploy`](docs/deploy) has a systemd unit for the worker, a Dockerfile and a Docker Compose file with two web instances, a worker, Postgres and Redis.
 
 ## A minimal app
 
@@ -129,6 +140,11 @@ Who owns which file:
 | `auth:login` | `/api/v1/auth/register`, `/login` (brute-force limited), `/logout`, `/me` |
 | `auth:react`, `auth:ui-login`, `auth:ui-register`, `auth:ui-account` | `AuthProvider`, `useAuth`, `useCan`, `<Can>`, and pages |
 | `metrics`, `security:cors`, `rate-limit`, `cache:memory`, `cache:redis` | Wired through one generated `installPlatform()` |
+| `redis` | One shared `AppRedis` connection; `cache:redis`, `jobs:redis` and `realtime:redis` use it |
+| `jobs:database`, `jobs:redis` | `AppQueue`, the `hydrate_jobs` table (database), `src/worker.ts`, generated `src/jobs/index.ts`, `jobs:*` commands |
+| `events` | `AppEvents`, generated `src/events/index.ts`; needs a jobs feature for durable listeners |
+| `storage:local`, `storage:s3` | `AppStorage`; local files are served through signed `/files` URLs |
+| `realtime:redis` | `app.publish()` reaches WebSocket clients on every instance |
 
 Operational commands come with the features that need them. They run the app's own code against `DATABASE_URL`:
 
@@ -160,7 +176,49 @@ const { user, logout } = useAuth();
 <Can permission="users.delete"><AdminTools /></Can>
 ```
 
-Signed-in users can also chat at `/ws/rooms/:room`.
+Signed-in users can also chat at `/ws/rooms/:room`. With `REDIS_URL` set, messages reach members connected to any instance.
+
+For v0.4 it added `bun hydrate add jobs:database events storage:local` and generated:
+- the `account.registered` event;
+- a durable `welcome-email` listener;
+- the `send-welcome-email` and `cleanup-expired-sessions` jobs.
+
+With these in place:
+- Registering emits the event in the same transaction that creates the account.
+- The worker then mails through a `LogMailer`, which appends to `data/outbox.jsonl`.
+- Expired sessions are deleted hourly.
+- `PUT /api/v1/users/me/avatar` stores an avatar, and the home page shows it through a signed URL.
+
+## Jobs, events and files
+
+```ts
+// src/jobs/send-welcome-email.job.ts (bun hydrate generate job send-welcome-email)
+export const sendWelcomeEmailJob = defineJob({
+  name: "send-welcome-email",
+  payload: schema.object({ accountId: schema.string(), email: schema.email() }),
+  retry: { attempts: 5 },           // exponential backoff from 10s
+  inject: [Mailer],
+  async handle({ email }, { services: [mailer], job }) {
+    await mailer.send({ to: email, subject: "Welcome", text: "…" }); // job.signal aborts on timeout and shutdown
+  },
+});
+
+// anywhere: with the database queue, the job commits or rolls back with the transaction
+await db.transaction(async () => {
+  const account = await accounts.create(input);
+  await events.emit(AccountRegistered, { accountId: account.id, email: account.email });
+});
+```
+
+How they run:
+- **Workers are a separate process** (`src/worker.ts`). They claim only jobs they have handlers for, hold them under a lease that is renewed while they run, and retry failures with backoff. Jobs out of attempts become dead jobs, which `hydrate jobs:dead` and `jobs:retry` show and revive. On SIGTERM a worker finishes or releases its jobs and exits 0.
+- **Cron.** `worker.schedule(job, "17 * * * *")` runs once per slot, however many workers there are.
+- **Events.**
+  - In-process listeners run after the emitting transaction commits.
+  - Durable listeners (`--durable`) are jobs, run at least once on any worker.
+  - `events.broadcast()` reaches every instance when the bus has a transport such as Redis.
+- **Uploads.** `ctx.upload("avatar", { types: ["image/png", "image/jpeg"], maxSize: "2mb" })` checks the file's bytes, not its name or declared type. Bodies over `MAX_BODY_SIZE` get a 413 before they are read.
+- **Storage.** `storage.put(key, file)` stores a file and `storage.signedUrl(key, { expiresIn: "10m" })` gives a URL for it. Served files get `nosniff`, a sandboxing CSP, and a download disposition for anything that could render as a page.
 
 ## Server-rendered React
 
@@ -186,11 +244,12 @@ bun test packages         # framework unit + integration tests
 bun test tests            # reference app, incl. end-to-end
 ```
 
-Set `TEST_POSTGRES_URL` (a disposable Postgres database) and `TEST_REDIS_URL` to also run the database, cache and rate-limit tests against real servers.
+Set `TEST_POSTGRES_URL` (a disposable Postgres database) and `TEST_REDIS_URL` to also run the database, cache, rate-limit, queue and fan-out tests against real servers. `TEST_S3_URL` runs the storage contract against a real S3-compatible store; otherwise it runs against a built-in fake.
 
-The end-to-end tests cover three things:
+The end-to-end tests cover four things:
 - They start the real dev server and verify SIGTERM gives a graceful exit 0.
 - They build with the real CLI, copy only `dist/` into an empty directory, and run it the way production does.
+- They run the worker as a separate process from `dist/`: registration mail arrives, SIGTERM exits 0, and mail queued while no worker ran is delivered after a restart. With Redis, a chat message crosses two web instances.
 - They drive Chromium to check that pages hydrate and become interactive, render signed in with no flash, show admin controls only to admins, sign in under the default CSP, and sync logout across tabs. This suite is skipped when no Playwright Chromium is installed; install it with `bunx playwright-core install chromium`.
 
 Generated code is tested too: every feature and preset is added to a scratch project, which must type-check and pass its own generated tests, and is then removed step by step.

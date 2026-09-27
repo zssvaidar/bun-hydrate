@@ -29,6 +29,7 @@ export function createApp({ config, assets, db, logger }: CreateAppOptions): App
   const app = new App({
     logger: logger ?? createLogger({ level: config.logLevel, format: config.logFormat }),
     trustProxy: config.trustProxy,
+    maxBodySize: config.maxBodySize,
   })
     .readinessCheck("database", () => db.ping())
     .use(assets.middleware);

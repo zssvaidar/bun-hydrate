@@ -1,0 +1,68 @@
+# The v0.4 topology (spec-6 §12.3): two web instances, one worker, Postgres and Redis.
+#   docker compose -f docs/deploy/docker-compose.yml up --build
+#   curl localhost:3001/ready   # and :3002
+# Secrets are inline for the example only: use Docker secrets and the *_FILE variables in production.
+
+x-app: &app
+  build:
+    context: ../..
+    dockerfile: docs/deploy/Dockerfile
+  environment: &env
+    DATABASE_URL: postgres://hydrate:hydrate@postgres:5432/hydrate
+    REDIS_URL: redis://redis:6379
+    STORAGE_SIGNING_KEY: change-me-to-at-least-32-random-characters
+    # storage:local is single-host: both web instances share this volume here. Across hosts,
+    # switch to storage:s3 (bun hydrate remove storage:local && bun hydrate add storage:s3).
+    STORAGE_ROOT: /app/data/storage
+    OUTBOX_PATH: /app/data/outbox.jsonl
+    LOG_FORMAT: json
+  volumes:
+    - app-data:/app/data
+  depends_on:
+    postgres: { condition: service_healthy }
+    redis: { condition: service_started }
+
+services:
+  web-1:
+    <<: *app
+    environment:
+      <<: *env
+      # Exactly one role migrates on start (spec-6 §10).
+      MIGRATE_ON_START: "true"
+    ports: ["3001:3000"]
+
+  web-2:
+    <<: *app
+    ports: ["3002:3000"]
+    depends_on:
+      web-1: { condition: service_started }
+
+  worker:
+    <<: *app
+    command: ["bun", "dist/worker.js"]
+    environment:
+      <<: *env
+      WORKER_PORT: "3100"   # /health, /ready, /metrics for the orchestrator
+    stop_grace_period: 35s  # the worker waits up to 25s for jobs in flight
+    # It refuses to start while migrations are pending, so it restarts until web-1 has migrated.
+    restart: on-failure
+
+  postgres:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: hydrate
+      POSTGRES_PASSWORD: hydrate
+      POSTGRES_DB: hydrate
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "hydrate"]
+      interval: 2s
+      retries: 30
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+
+  redis:
+    image: redis:7
+
+volumes:
+  app-data:
+  postgres-data:
