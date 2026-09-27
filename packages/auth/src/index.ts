@@ -45,3 +45,15 @@ export {
   type VerifyOptions,
   type JwtStrategyOptions,
 } from "./jwt";
+export {
+  createApiKey,
+  revokeApiKey,
+  listApiKeys,
+  apiKeyStrategy,
+  DatabaseApiKeyStore,
+  API_KEYS_MIGRATION,
+  type ApiKeyRecord,
+  type ApiKeySummary,
+  type ApiKeyStore,
+  type ApiKeyStrategyOptions,
+} from "./api-keys";
