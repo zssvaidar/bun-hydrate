@@ -35,3 +35,4 @@ export {
 } from "./lifecycle";
 export { serveStatic, type StaticOptions } from "./static";
 export { REQUEST_ID_HEADER } from "./request-id";
+export { parseDuration, type Duration } from "./duration";

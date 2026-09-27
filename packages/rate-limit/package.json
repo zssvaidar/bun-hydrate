@@ -1,0 +1,13 @@
+{
+  "name": "@bun-hydrate/rate-limit",
+  "version": "0.1.0",
+  "description": "Sliding-window rate limiting with memory and Redis stores and standard RateLimit headers.",
+  "license": "MIT",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "peerDependencies": {
+    "@bun-hydrate/core": "workspace:*"
+  }
+}

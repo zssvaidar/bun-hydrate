@@ -23,6 +23,13 @@
         "typescript": "^5.9.0",
       },
     },
+    "packages/cache": {
+      "name": "@bun-hydrate/cache",
+      "version": "0.1.0",
+      "peerDependencies": {
+        "@bun-hydrate/core": "workspace:*",
+      },
+    },
     "packages/cli": {
       "name": "@bun-hydrate/cli",
       "version": "0.1.0",
@@ -47,6 +54,13 @@
     },
     "packages/di": {
       "name": "@bun-hydrate/di",
+      "version": "0.1.0",
+      "peerDependencies": {
+        "@bun-hydrate/core": "workspace:*",
+      },
+    },
+    "packages/rate-limit": {
+      "name": "@bun-hydrate/rate-limit",
       "version": "0.1.0",
       "peerDependencies": {
         "@bun-hydrate/core": "workspace:*",
@@ -78,6 +92,8 @@
     },
   },
   "packages": {
+    "@bun-hydrate/cache": ["@bun-hydrate/cache@workspace:packages/cache"],
+
     "@bun-hydrate/cli": ["@bun-hydrate/cli@workspace:packages/cli"],
 
     "@bun-hydrate/core": ["@bun-hydrate/core@workspace:packages/core"],
@@ -85,6 +101,8 @@
     "@bun-hydrate/database": ["@bun-hydrate/database@workspace:packages/database"],
 
     "@bun-hydrate/di": ["@bun-hydrate/di@workspace:packages/di"],
+
+    "@bun-hydrate/rate-limit": ["@bun-hydrate/rate-limit@workspace:packages/rate-limit"],
 
     "@bun-hydrate/react": ["@bun-hydrate/react@workspace:packages/react"],
 

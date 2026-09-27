@@ -1,0 +1,13 @@
+{
+  "name": "@bun-hydrate/cache",
+  "version": "0.1.0",
+  "description": "Cache interface with memory (LRU + TTL) and Redis adapters, and single-flight remember().",
+  "license": "MIT",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "peerDependencies": {
+    "@bun-hydrate/core": "workspace:*"
+  }
+}
