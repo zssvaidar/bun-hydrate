@@ -1,12 +1,19 @@
 import { describe, expect, test } from "bun:test";
 import { App, createLogger } from "@bun-hydrate/core";
+import { createRedis } from "@bun-hydrate/redis";
 import { createTestClient } from "@bun-hydrate/testing";
 import { MemoryRateLimitStore, RedisRateLimitStore, peekJson, rateLimit, type RateLimitStore } from "../src/index";
 
 const stores: { name: string; create: () => RateLimitStore }[] = [
   { name: "memory", create: () => new MemoryRateLimitStore() },
   ...(process.env.TEST_REDIS_URL
-    ? [{ name: "redis", create: () => new RedisRateLimitStore({ url: process.env.TEST_REDIS_URL! }) }]
+    ? [
+        { name: "redis", create: () => new RedisRateLimitStore({ url: process.env.TEST_REDIS_URL! }) },
+        {
+          name: "redis (shared manager)",
+          create: () => new RedisRateLimitStore({ redis: createRedis({ url: process.env.TEST_REDIS_URL!, prefix: `test:${crypto.randomUUID()}:` }) }),
+        },
+      ]
     : []),
 ];
 

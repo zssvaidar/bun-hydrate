@@ -1,7 +1,10 @@
+import type { Redis } from "@bun-hydrate/redis";
 import { RedisClient } from "bun";
 import { KeyValueCache, type CacheOptions, type CacheStore } from "./cache";
 
 export interface RedisCacheOptions extends CacheOptions {
+  /** The process's shared Redis (spec-6 §2). Keys default to `<prefix>cache:`; closing the cache leaves it open. */
+  redis?: Redis;
   /** redis://… URL; the cache owns (and closes) the client it creates. */
   url?: string;
   /** Or share an existing client; it is not closed by the cache. */
@@ -50,6 +53,10 @@ class RedisStore implements CacheStore {
 
 export class RedisCache extends KeyValueCache {
   constructor(options: RedisCacheOptions) {
+    if (options.redis) {
+      super(new RedisStore(options.redis.client, false), options, options.prefix ?? `${options.redis.key("cache")}:`);
+      return;
+    }
     const client =
       options.client ??
       new RedisClient(options.url, {

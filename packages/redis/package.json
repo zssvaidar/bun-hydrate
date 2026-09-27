@@ -1,0 +1,10 @@
+{
+  "name": "@bun-hydrate/redis",
+  "version": "0.1.0",
+  "description": "One Redis connection manager per process: key prefixing, a dedicated subscriber, readiness and clean shutdown.",
+  "license": "MIT",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  }
+}

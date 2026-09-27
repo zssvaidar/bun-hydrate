@@ -13,6 +13,7 @@
         "@bun-hydrate/observability": "workspace:*",
         "@bun-hydrate/rate-limit": "workspace:*",
         "@bun-hydrate/react": "workspace:*",
+        "@bun-hydrate/redis": "workspace:*",
         "@bun-hydrate/validation": "workspace:*",
         "react": "^19.3.0",
         "react-dom": "^19.3.0",
@@ -42,6 +43,7 @@
       "version": "0.1.0",
       "peerDependencies": {
         "@bun-hydrate/core": "workspace:*",
+        "@bun-hydrate/redis": "workspace:*",
       },
     },
     "packages/cli": {
@@ -86,6 +88,7 @@
       "version": "0.1.0",
       "peerDependencies": {
         "@bun-hydrate/core": "workspace:*",
+        "@bun-hydrate/redis": "workspace:*",
       },
     },
     "packages/react": {
@@ -97,6 +100,10 @@
         "react": "^19.0.0",
         "react-dom": "^19.0.0",
       },
+    },
+    "packages/redis": {
+      "name": "@bun-hydrate/redis",
+      "version": "0.1.0",
     },
     "packages/testing": {
       "name": "@bun-hydrate/testing",
@@ -133,6 +140,8 @@
     "@bun-hydrate/rate-limit": ["@bun-hydrate/rate-limit@workspace:packages/rate-limit"],
 
     "@bun-hydrate/react": ["@bun-hydrate/react@workspace:packages/react"],
+
+    "@bun-hydrate/redis": ["@bun-hydrate/redis@workspace:packages/redis"],
 
     "@bun-hydrate/testing": ["@bun-hydrate/testing@workspace:packages/testing"],
 

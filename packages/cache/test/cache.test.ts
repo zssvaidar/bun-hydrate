@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import { createRedis } from "@bun-hydrate/redis";
 import { MemoryCache, RedisCache, type Cache } from "../src/index";
 
 interface Adapter {
@@ -186,6 +187,18 @@ describe.skipIf(!process.env.TEST_REDIS_URL)("RedisCache specifics", () => {
 
     expect(await child.exited).toBe(0);
     expect(performance.now() - startedAt).toBeLessThan(3_000);
+  });
+
+  test("shares a Redis connection manager: keys under <prefix>cache:, and closing the cache leaves it open", async () => {
+    const redis = createRedis({ url: process.env.TEST_REDIS_URL!, prefix: `test:${crypto.randomUUID()}:` });
+    const cache = new RedisCache({ redis });
+
+    await cache.set("user:1", { name: "Ada" }, 60);
+    expect(await redis.client.get(redis.key("cache", "user:1"))).toBe(JSON.stringify({ name: "Ada" }));
+    await cache.close();
+    expect(await redis.ping()).toBe(true);
+    await redis.client.del(redis.key("cache", "user:1"));
+    await redis.close();
   });
 
   test("ping is false when Redis is unreachable", async () => {

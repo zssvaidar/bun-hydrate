@@ -1,3 +1,4 @@
+import type { Redis } from "@bun-hydrate/redis";
 import { RedisClient } from "bun";
 import { decide, windowPosition, type ConsumeOptions, type Decision, type RateLimitStore } from "./window";
 
@@ -64,6 +65,8 @@ return {1, current, previous}
 `;
 
 export interface RedisRateLimitStoreOptions {
+  /** The process's shared Redis (spec-6 §2). Keys default to `<prefix>ratelimit:`; close() leaves it open. */
+  redis?: Redis;
   url?: string;
   client?: RedisClient;
   /** Prepended to every key. Default: "ratelimit:". */
@@ -76,9 +79,9 @@ export class RedisRateLimitStore implements RateLimitStore {
   private readonly prefix: string;
 
   constructor(options: RedisRateLimitStoreOptions) {
-    this.client = options.client ?? new RedisClient(options.url);
-    this.ownsClient = options.client === undefined;
-    this.prefix = options.prefix ?? "ratelimit:";
+    this.client = options.redis?.client ?? options.client ?? new RedisClient(options.url);
+    this.ownsClient = options.redis === undefined && options.client === undefined;
+    this.prefix = options.prefix ?? (options.redis ? `${options.redis.key("ratelimit")}:` : "ratelimit:");
   }
 
   async consume(key: string, { limit, windowMs, now }: ConsumeOptions): Promise<Decision> {
