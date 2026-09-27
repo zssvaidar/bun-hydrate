@@ -1,7 +1,7 @@
 # bun-hydrate Spec 5 — Production Backend Detailed Design (v0.3)
 
 **Document:** `spec-5`
-**Status:** Accepted (rev. 2) — decisions D1–D10 taken as recommended
+**Status:** Implemented (v0.3). Decisions D1–D10 were taken as recommended; the deviations are recorded in §16 "As built"
 **Builds on:** `spec-1` §28 (v0.3: authentication, authorization, logging, request IDs, metrics, rate limiting, caching, WebSockets), `spec-2` §2.2/§2.4 (security baseline FR-220–227, tracing FR-242, WebSocket fan-out FR-241, shutdown scope FR-243), `spec-3` (kernel), `spec-4` (validation, DI, database)
 **Out of scope:** `Jenkinsfile` and `deploy.sh` (unchanged); queues, jobs, events and multi-instance WebSocket fan-out (v0.4)
 
@@ -692,3 +692,70 @@ Each step is a separate commit with its tests green:
 | D8 | Frontend state library for `AuthProvider` | (a) plain React context + `useSyncExternalStore`; (b) depend on a library (Zustand, TanStack Query) | **(a)**: no new dependency, and apps can still use TanStack Query for their own data. |
 | D9 | What `remove` does to data | (a) keep tables unless `--drop-data`; (b) always drop | **(a)**: removing a feature should never silently delete production data; the removal migration says what it left behind. |
 | D10 | Orchestrator scope in v0.3 | (a) generic engine, used by auth **and** cache/rate-limit/metrics/CORS; (b) auth only, generalize in v0.4 | **(a)**, provided it stays on schedule: the engine is the same code either way, and the four non-auth features are small. If time runs short, (b) is the fallback. |
+
+---
+
+## 16. As built
+
+v0.3 was implemented in the order of §13, test first, and every §12 row has tests. Where the code differs from the text above, the code is right, for the reasons below.
+
+### 16.1 Kernel
+
+| Topic | Spec | As built, and why |
+|---|---|---|
+| `fetch` vs upgrade | `app.fetch` for everything | `app.fetch(request)` never upgrades, so WebSocket routes answer `426` there. `app.handle(request, server)` can upgrade, and `listen()` uses it. In-process tests keep a plain `fetch`. |
+| Shutdown of WebSockets | close code `1001` | Close code `1012` ("service restart"): Bun rewrites a server-sent `1001` to `1000`, which clients read as a normal close. |
+| Draining | `server.stop()` | The app counts its own in-flight requests and open sockets and drains those. In Bun 1.3.11, `server.stop()` never settles once a WebSocket has connected. |
+| Migrations | — | Sections that hold only comments are deliberate no-ops (SQLite rejects an empty query). Removal migrations that keep data rely on this. |
+| `build()` | — | Restores `NODE_ENV` afterwards, even on failure. The CLI loads the bundler only for `hydrate build`, so other commands never load React. |
+
+### 16.2 Auth
+
+| Topic | Spec | As built, and why |
+|---|---|---|
+| `authenticate()` | Variadic strategies | Takes `authenticate({ strategies, policy })`, so role → permission resolution happens once per request. |
+| Forged or expired session cookie | `401` | The request continues anonymous and the cookie is cleared. Browsers resend cookies on every request, so a stale cookie must not break public pages. Protected routes still answer `401` through `requireAuth()`/`requirePermission()`. |
+| OIDC principals | — | `via: "jwt"`, because they are bearer tokens: CSRF exempts them the same way. |
+| JWT with OIDC | Both allowed | `auth:jwt` and `auth:oidc` conflict. Both read `Authorization: Bearer`, and one verifier per app keeps a foreign token from being rejected by the wrong one. |
+| Issued JWTs | `sub`, roles | `JwtIssuer.issue()` also carries public claims such as `email`. Registered claims (`sub`, `iat`, `exp`, …) and `roles`/`permissions` cannot be overridden this way. |
+| Data model (§11) | `password_hash` and `role` columns on `users` | Features own their own tables: `accounts` (auth:core) and `account_passwords` (auth:passwords). A fresh project has no `users` table, and the CLI must never assume one exists (§9.6). The reference app's `users` module is a directory; the "self" rule matches the entry by the signed-in email. |
+| Runtime features | Values (`sessionsFeature`) | Factories: `sessionsFeature(options)`, `jwtFeature`, `oidcFeature`, `apiKeysFeature`. They read their settings from `authConfig.features` or the environment (with `_FILE` support), and fail at startup with a `ConfigError`. |
+| `AuthFeature` hooks | `Resolver` | Receive the `Container`, so features can ask `has()`. For example, the login routes check for `SessionManager` and `JwtIssuer`, so the login files don't change when switching between sessions and JWT. |
+| Console commands | — | `createAuth(...).register(container)` wires services without an HTTP app. The generated commands use it. |
+| Test helpers | `@bun-hydrate/testing` | Split into subpaths (`/auth`, `/database`), so the base helpers stay free of auth and database dependencies. |
+
+### 16.3 Other packages
+
+| Topic | As built |
+|---|---|
+| `rateLimit({ failClosed: true })` | Answers `503 RATE_LIMIT_UNAVAILABLE` when the store fails. |
+| `cache.remember()` | Returns `null`/`undefined` from the loader without caching it. `null` means "absent" in the cache API. |
+| React renderer | Gained `shared(ctx)` and `wrap(page, shared)`, and `render()` takes `{ ctx }`. `hydratePage(pages, { wrap })` must use the same `wrap`. |
+| Metrics (D3) | In production, `/metrics` is served only when `METRICS_TOKEN` is set; otherwise a warning is logged. The app still starts. Refusing to start would break existing deploys, which set no new variables. |
+
+### 16.4 Feature orchestration
+
+- **Where the pieces live.** `defineFeature`/`definePreset` (development time: files, migrations, outputs) live in `@bun-hydrate/cli`. `defineAuthFeature`/`createAuth` (runtime) live in `@bun-hydrate/auth`. Both use the same feature ids.
+- **Composed files.** Features contribute to named slots, and outputs render the slots. Several features may declare the same output. It is rendered once and deleted with the last of them: this is how every platform feature shares one generated `installPlatform(app, container)` (`src/platform/index.ts`).
+- **Tracked files.** Templates are `.tmpl` files imported as text, so generated code is written as real code. Every preset and single feature is added to a scratch project in the tests. The project must type-check and pass its generated tests, then survive a step-by-step removal.
+- **Generated login tests.** They check the modes the app actually installed (`auth.has("auth:sessions")`, `auth.has("auth:jwt")`), so they stay valid after switching between them.
+- **Confirmation.** `add`/`remove` prompt `Apply? [Y/n]` on a terminal. Without one, they require `--yes`.
+- **Command options.** Options are `--name value` or `--name=value`. `--password`, `--secret` and `--token` are refused outright.
+- **Not built.** `generate module --auth` stops with the command to run instead of offering to add `auth:core` interactively.
+
+### 16.5 Reference app
+
+- It was produced with `bun hydrate add auth metrics security:cors rate-limit` and wired by hand as printed. The generated files are committed unchanged, and `bun hydrate doctor` is clean.
+- No cache feature is installed, because nothing in the app is worth caching yet. `REDIS_URL` belongs to `cache:redis`.
+- Its e2e databases are prepared with the real CLI: `db:migrate`, then `auth:create-user --password-stdin`.
+
+### 16.6 Bun 1.3.11 behaviour found along the way
+
+- The bundler's `minify.syntax` breaks React's labelled statements. Builds use whitespace and identifier minification only, behind a V8 syntax check (spec-3).
+- `Bun.SQL` queries are lazy. `expect(query).rejects` hangs; `await` or `.catch()` them.
+- A `RedisClient` in subscriber mode keeps the process alive after `close()`. v0.3 doesn't use pub/sub.
+- `expect(x).toMatchObject({ key: expect.any(String) })` replaces `x.key` with the matcher object. Read values before asserting on them.
+- A second in-process `Bun.build` of the same entry occasionally fails with "Unexpected reading file". Tests avoid depending on repeated in-process builds.
+- React 19's SSR keeps `autoComplete` camel-cased in HTML, which browsers treat case-insensitively.
+- Playwright's `APIRequestContext` fails under Bun ("Target … closed"). Browser tests sign in with a same-origin `fetch` from the page, which is also the more faithful flow.
+
