@@ -30,6 +30,7 @@ import {
 } from "./websocket";
 import { securityHeaders, type SecurityHeadersOptions } from "./security-headers";
 import type { PubSub, PubSubMessage } from "./pubsub";
+import { enforceBodyLimit, parseSize, type Size } from "./upload";
 import { childTrace, parseTraceparent, runWithTrace } from "./trace";
 
 export interface AppOptions {
@@ -48,6 +49,8 @@ export interface AppOptions {
   websocket?: WebSocketOptions;
   /** Carries app.publish() to every instance (spec-6 §9). Default: this process only. */
   pubsub?: PubSub;
+  /** Largest request body accepted (spec-6 §8); bodyLimit() lowers it per route. Default: "10mb". */
+  maxBodySize?: Size;
 }
 
 /** What `fetch` needs from Bun's server: the socket address of the peer. */
@@ -86,6 +89,7 @@ export class App extends Router {
   private readonly onSignal = () => void this.stop();
   private readonly websocketOptions: WebSocketOptions;
   private readonly pubsub: PubSub | undefined;
+  private readonly maxBodyBytes: number;
   private unsubscribePubSub: (() => Promise<void>) | undefined;
   private readonly drainHooks: StopHook[] = [];
   private readonly sockets = new Set<ServerWebSocket<object>>();
@@ -104,8 +108,14 @@ export class App extends Router {
     this.trustProxy = options.trustProxy ?? false;
     this.websocketOptions = options.websocket ?? {};
     this.pubsub = options.pubsub;
+    this.maxBodyBytes = parseSize(options.maxBodySize ?? "10mb");
     this.isTrustedProxy = Array.isArray(this.trustProxy) ? ipMatcher(this.trustProxy) : undefined;
 
+    // First, so every route is covered; Bun also refuses larger bodies before any code runs.
+    this.use((ctx, next) => {
+      enforceBodyLimit(ctx, this.maxBodyBytes);
+      return next();
+    });
     if (options.securityHeaders !== false) this.use(securityHeaders(options.securityHeaders ?? {}));
 
     if (options.health ?? true) {
@@ -159,6 +169,7 @@ export class App extends Router {
         hostname: options.hostname ?? "0.0.0.0",
         fetch: (request, server) => this.handle(request, server as unknown as UpgradeCapable),
         websocket: this.websocketHandler(),
+        maxRequestBodySize: this.maxBodyBytes,
       });
     } catch (error) {
       await this.lifecycle.runShutdownHooks();

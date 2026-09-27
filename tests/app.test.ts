@@ -157,3 +157,13 @@ describe("loadConfig", () => {
     expect(() => loadConfig({ PORT: "eighty" })).toThrow(ConfigError);
   });
 });
+
+describe("client bundle", () => {
+  test("stays free of server code (core, the renderer, node: modules)", async () => {
+    const result = await Bun.build({ entrypoints: ["src/web/client.tsx"], target: "browser", metafile: true });
+    const inputs = Object.keys(result.metafile!.inputs);
+
+    expect(result.success).toBe(true);
+    expect(inputs.filter((input) => input.includes("packages/core") || input.includes("renderer") || input.startsWith("node:"))).toEqual([]);
+  });
+});

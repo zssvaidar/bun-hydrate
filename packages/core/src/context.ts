@@ -2,6 +2,7 @@ import type { BunFile } from "bun";
 import { Cookies } from "./cookies";
 import { BadRequestError, NotFoundError } from "./errors";
 import { randomHex } from "./trace";
+import { checkUploads, readLimited, type UploadRules, type UploadedFile, type UploadsRules } from "./upload";
 import type { Logger } from "./logger";
 
 /**
@@ -22,10 +23,16 @@ const HTML_TYPE = "text/html;charset=utf-8";
 
 /** Request body readers. Kept apart from the `ctx.json()` response builder to avoid one name with two meanings. */
 export class RequestBody {
-  constructor(private readonly request: Request) {}
+  private form: Promise<FormData> | undefined;
+
+  /** `limit` reports the current body size limit in bytes (maxBodySize, lowered by bodyLimit()). */
+  constructor(
+    private readonly request: Request,
+    private readonly limit: () => number | undefined = () => undefined,
+  ) {}
 
   async json<T = unknown>(): Promise<T> {
-    const text = await this.request.text();
+    const text = await this.text();
     try {
       return JSON.parse(text) as T;
     } catch {
@@ -33,20 +40,26 @@ export class RequestBody {
     }
   }
 
-  text(): Promise<string> {
-    return this.request.text();
+  async text(): Promise<string> {
+    return new TextDecoder().decode(await this.bytes());
   }
 
-  async formData(): Promise<FormData> {
-    try {
-      return await this.request.formData();
-    } catch {
-      throw new BadRequestError("Request body is not valid form data", { code: "INVALID_FORM_DATA" });
-    }
+  /** Parsed once per request, so several ctx.upload() calls share it. */
+  formData(): Promise<FormData> {
+    this.form ??= (async () => {
+      const bytes = await this.bytes();
+      try {
+        return await new Response(bytes as Uint8Array<ArrayBuffer>, { headers: { "content-type": this.request.headers.get("content-type") ?? "" } }).formData();
+      } catch {
+        throw new BadRequestError("Request body is not valid form data", { code: "INVALID_FORM_DATA" });
+      }
+    })();
+    return this.form;
   }
 
   bytes(): Promise<Uint8Array> {
-    return this.request.bytes();
+    const limit = this.limit();
+    return limit === undefined ? this.request.bytes() : readLimited(this.request, limit);
   }
 }
 
@@ -83,6 +96,7 @@ export class Context<Params = Record<string, string>> {
   readonly spanId: string;
   readonly traceFlags: string;
 
+  private bodyLimitBytes: number | undefined;
   private pendingStatus: number | undefined;
   private readonly pendingHeaders = new Headers();
 
@@ -96,7 +110,7 @@ export class Context<Params = Record<string, string>> {
     this.params = init.params;
     this.requestId = init.requestId;
     this.log = init.log;
-    this.body = new RequestBody(request);
+    this.body = new RequestBody(request, () => this.bodyLimitBytes);
     this.ip = init.ip ?? "127.0.0.1";
     this.protocol = init.protocol ?? (this.url.protocol === "https:" ? "https" : "http");
     this.route = init.route;
@@ -107,6 +121,22 @@ export class Context<Params = Record<string, string>> {
   }
 
   /** Sets the status used by the response builders and by plain return values. */
+  /** Lowers the body size limit for this request (bodyLimit() and the app's maxBodySize use it). */
+  limitBody(bytes: number): void {
+    this.bodyLimitBytes = this.bodyLimitBytes === undefined ? bytes : Math.min(this.bodyLimitBytes, bytes);
+  }
+
+  /** One uploaded file from a multipart form, checked by content and size (spec-6 §8). A 422 otherwise. */
+  async upload(field: string, rules: UploadRules): Promise<UploadedFile> {
+    const [file] = await checkUploads(field, (await this.body.formData()).getAll(field), { ...rules, maxFiles: 1, required: true });
+    return file!;
+  }
+
+  /** Every file sent in `field`, each checked like upload(). */
+  async uploads(field: string, rules: UploadsRules): Promise<UploadedFile[]> {
+    return checkUploads(field, (await this.body.formData()).getAll(field), rules);
+  }
+
   status(code: number): this {
     this.pendingStatus = code;
     return this;

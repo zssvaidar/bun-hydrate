@@ -7,7 +7,8 @@
   "exports": {
     ".": "./src/index.ts",
     "./client": "./src/client.tsx",
-    "./auth": "./src/auth.tsx"
+    "./auth": "./src/auth.tsx",
+    "./pages": "./src/pages.ts"
   },
   "peerDependencies": {
     "@bun-hydrate/core": "workspace:*",

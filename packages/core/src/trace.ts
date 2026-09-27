@@ -42,7 +42,8 @@ export interface TraceContext {
   flags: string;
 }
 
-const ambient = new AsyncLocalStorage<TraceContext>();
+// Created on first use, so importing core never touches node:async_hooks (e.g. in a browser bundle).
+let ambient: AsyncLocalStorage<TraceContext> | undefined;
 
 /** A new span in `parent`'s trace, or a new trace when there is no parent. */
 export function childTrace(parent: TraceParent | TraceContext | undefined): TraceContext {
@@ -51,12 +52,13 @@ export function childTrace(parent: TraceParent | TraceContext | undefined): Trac
 
 /** Runs `work` with `trace` as the current trace, so code without a `ctx` (services, jobs) can continue it. */
 export function runWithTrace<T>(trace: TraceContext, work: () => T): T {
+  ambient ??= new AsyncLocalStorage<TraceContext>();
   return ambient.run(trace, work);
 }
 
 /** The trace of the request or job being handled, if any (spec-6 §13). */
 export function currentTrace(): TraceContext | undefined {
-  return ambient.getStore();
+  return ambient?.getStore();
 }
 
 export function formatTraceparent(trace: TraceContext): string {
