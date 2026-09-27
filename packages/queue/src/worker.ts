@@ -10,6 +10,7 @@ import {
 import type { Container } from "@bun-hydrate/di";
 import type { Completion, JobRecord } from "./adapter";
 import { retryDelay } from "./backoff";
+import { parseCron, type CronSchedule } from "./cron";
 import { JobPayloadError, NonRetryableError, validatePayload, type JobContext, type JobDefinition } from "./define";
 import type { Queue } from "./queue";
 
@@ -66,6 +67,21 @@ class ShutdownAbort extends Error {
   }
 }
 
+export interface ScheduleOptions<Payload> {
+  /** Default: {} (the job's schema must accept it). */
+  payload?: Payload;
+  /** IANA timezone the cron expression is read in. Default: UTC. */
+  timezone?: string;
+}
+
+interface Schedule {
+  definition: JobDefinition;
+  cron: CronSchedule;
+  payload: unknown;
+  timezone: string;
+  timer?: ReturnType<typeof setTimeout>;
+}
+
 interface InFlight {
   controller: AbortController;
   done: Promise<void>;
@@ -84,6 +100,7 @@ export class Worker {
   private readonly leaseMs: number;
   private readonly inFlight = new Map<string, InFlight>();
   private readonly timers: ReturnType<typeof setInterval>[] = [];
+  private readonly schedules: Schedule[] = [];
   private running: Promise<void> | undefined;
   private stopping: Promise<void> | undefined;
   private wake: (() => void) | undefined;
@@ -107,6 +124,22 @@ export class Worker {
     if (this.handlers.size !== options.handlers.length) throw new Error("Two handlers share a job name");
   }
 
+  /**
+   * Dispatches `definition` at every slot of a cron expression (spec-6 §3.5). Several workers can
+   * run the same schedule: the slot is the idempotency key, so each slot runs once. Slots missed
+   * while no worker ran are skipped, not caught up.
+   */
+  schedule<Payload>(definition: JobDefinition<Payload>, cron: string, options: ScheduleOptions<NoInfer<Payload>> = {}): this {
+    if (this.handlers.get(definition.name) !== definition) {
+      throw new Error(`Scheduled job "${definition.name}" has no handler in this worker`);
+    }
+    const schedule: Schedule = { definition, cron: parseCron(cron), payload: options.payload ?? {}, timezone: options.timezone ?? "UTC" };
+    schedule.cron.next(new Date(this.now()), schedule.timezone); // an unknown timezone fails here, not at start
+    this.schedules.push(schedule);
+    if (this.running && !this.stopping) this.arm(schedule);
+    return this;
+  }
+
   /** Jobs running right now. */
   get active(): number {
     return this.inFlight.size;
@@ -123,6 +156,7 @@ export class Worker {
     every(parseDuration(this.options.maintenanceInterval ?? "1m"), () => this.maintain());
     await this.maintain();
     this.stopWaking = await this.options.queue.adapter.onWake?.(() => this.wake?.());
+    for (const schedule of this.schedules) this.arm(schedule);
 
     if (this.options.signals !== false) {
       process.once("SIGTERM", this.onSignal);
@@ -137,6 +171,7 @@ export class Worker {
     this.stopping ??= (async () => {
       this.wake?.();
       for (const timer of this.timers) clearInterval(timer);
+      for (const schedule of this.schedules) clearTimeout(schedule.timer);
       process.off("SIGTERM", this.onSignal);
       process.off("SIGINT", this.onSignal);
 
@@ -150,6 +185,23 @@ export class Worker {
       this.logger.info("Worker stopped", { workerId: this.id });
     })();
     return this.stopping;
+  }
+
+  /** Waits for the schedule's next slot, dispatches it, and arms the one after. */
+  private arm(schedule: Schedule): void {
+    const slot = schedule.cron.next(new Date(this.now()), schedule.timezone);
+    // setTimeout holds at most ~24.8 days; longer waits just re-arm.
+    const wait = Math.min(slot.getTime() - this.now(), 2 ** 31 - 1);
+    schedule.timer = setTimeout(async () => {
+      if (this.stopping) return;
+      if (this.now() >= slot.getTime()) {
+        const key = `cron:${schedule.definition.name}:${slot.toISOString()}`;
+        await this.options.queue
+          .dispatch(schedule.definition, schedule.payload, { runAt: slot, idempotencyKey: key })
+          .catch((error) => this.logger.error("Dispatching a scheduled job failed", { job: schedule.definition.name, error }));
+      }
+      if (!this.stopping) this.arm(schedule);
+    }, Math.max(0, wait));
   }
 
   private async loop(): Promise<void> {

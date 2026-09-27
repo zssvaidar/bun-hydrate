@@ -269,3 +269,37 @@ describe("worker", () => {
     expect((await adapter.get(id))?.attempt).toBe(2);
   });
 });
+
+describe("schedules", () => {
+  test("two workers on the same schedule dispatch one job per slot", async () => {
+    const runs: string[] = [];
+    const tick = defineJob({ name: "tick", payload: schema.object({ label: schema.string() }), handle: ({ label }) => void runs.push(label) });
+    // A clock 50ms before the next minute boundary, so the test doesn't wait for a real one.
+    const real = Date.now();
+    const offset = Math.ceil((real + 1) / 60_000) * 60_000 - 50 - real;
+    const now = () => Date.now() + offset;
+    const adapter = new MemoryQueueAdapter();
+    const queue = createQueue({ adapter, now });
+    const make = () => {
+      const worker = createWorker({ queue, handlers: [tick], logger: silent, poll: { min: 5, max: 10 }, signals: false, now });
+      worker.schedule(tick, "* * * * *", { payload: { label: "every minute" } });
+      workers.push(worker);
+      return worker;
+    };
+    const [a, b] = [make(), make()];
+
+    await Promise.all([a.start(), b.start()]);
+    await eventually(() => runs.length >= 1, "the scheduled run");
+    await Bun.sleep(50);
+    expect(runs).toEqual(["every minute"]);
+  });
+
+  test("a schedule's cron and timezone are checked when it is added", () => {
+    const tick = defineJob({ name: "tick", payload: schema.object({}), handle() {} });
+    const { worker } = setup([tick]);
+    expect(() => worker.schedule(tick, "* * *")).toThrow("Cron expressions have 5 fields");
+    expect(() => worker.schedule(tick, "* * * * *", { timezone: "Nowhere/Land" })).toThrow('Unknown timezone "Nowhere/Land"');
+    const other = defineJob({ name: "other", payload: schema.object({}), handle() {} });
+    expect(() => worker.schedule(other, "* * * * *")).toThrow('Scheduled job "other" has no handler in this worker');
+  });
+});
