@@ -1,0 +1,13 @@
+{
+  "name": "@bun-hydrate/database",
+  "version": "0.1.0",
+  "description": "Bun.SQL database access with ambient transactions and SQL migrations.",
+  "license": "MIT",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "peerDependencies": {
+    "@bun-hydrate/core": "workspace:*"
+  }
+}
