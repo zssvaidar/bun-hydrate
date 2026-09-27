@@ -5,10 +5,16 @@ import type { Container } from "@bun-hydrate/di";
 import { installMetrics } from "./metrics";
 import { installCors } from "./cors";
 import { installRateLimit } from "./rate-limit";
+import { installJobs } from "../jobs/queue";
+import { installEvents } from "../events/bus";
+import { installStorage } from "./storage";
 
 /** Call once in src/app.ts, before installAuth() and your routes: installPlatform(app, container). */
 export function installPlatform(app: App, container: Container): void {
   installMetrics(app);
   installCors(app);
   installRateLimit(app);
+  installJobs(container);
+  installEvents(app, container);
+  installStorage(app, container);
 }

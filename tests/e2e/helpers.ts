@@ -32,9 +32,12 @@ export function buildArtifact(): Promise<string> {
   return artifact;
 }
 
+/** Production refuses to start storage:local without a signing key. */
+export const E2E_SIGNING_KEY = "e2e-signing-key-of-at-least-32-characters";
+
 export async function startArtifact(env: Record<string, string> = {}): Promise<RunningServer> {
   const releaseDir = await buildArtifact();
-  return spawnServer({ cmd: ["bun", "dist/index.js"], cwd: releaseDir, env: { ...E2E_ENV, ...env } });
+  return spawnServer({ cmd: ["bun", "dist/index.js"], cwd: releaseDir, env: { ...E2E_ENV, STORAGE_SIGNING_KEY: E2E_SIGNING_KEY, ...env } });
 }
 
 /**

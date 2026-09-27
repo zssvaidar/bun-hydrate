@@ -5,6 +5,8 @@ import { Database } from "@bun-hydrate/database";
 import type { Container } from "@bun-hydrate/di";
 import { peekJson, rateLimit } from "@bun-hydrate/rate-limit";
 import { validate } from "@bun-hydrate/validation";
+import { AccountRegistered } from "../../events/account-registered.event";
+import { AppEvents } from "../../events/bus";
 import { AccountRepository, normalizeEmail, type Account } from "../accounts";
 import { DEFAULT_ROLE, authConfig } from "../config";
 import { Passwords } from "../passwords";
@@ -36,6 +38,7 @@ export function loginRoutes(container: Container): Router {
   const passwords = container.get(Passwords);
   const sessions = container.has(SessionManager) ? container.get(SessionManager) : undefined;
   const tokens = container.has(JwtIssuer) ? container.get(JwtIssuer) : undefined;
+  const events = container.has(AppEvents) ? container.get(AppEvents) : undefined;
 
   /** Starts a session and/or issues a bearer token, whichever the app has installed. */
   async function signIn(ctx: Context<any>, account: Account) {
@@ -59,6 +62,8 @@ export function loginRoutes(container: Container): Router {
         const account = await db.transaction(async () => {
           const created = await accounts.create({ email: body.email, role: DEFAULT_ROLE });
           await passwords.set(created.id, body.password);
+          // Same transaction: the welcome mail job exists exactly when the account does.
+          await events?.emit(AccountRegistered, { accountId: created.id, email: created.email });
           return created;
         });
         ctx.status(201);

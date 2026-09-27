@@ -72,6 +72,30 @@
         "src/platform/metrics.test.ts": "sha256-8e72ffb210a3898aebd76b5f22fcb3f3dfb8d997b1bf93424cae3bbdc5c8d923"
       },
       "migrations": []
+    },
+    "jobs:database": {
+      "files": {
+        "src/jobs/queue.ts": "sha256-4544ef66d4f5a815ec44f04c25e8cb49931097d9c4608cf3e34ba55ab562e885",
+        "src/jobs/queue.test.ts": "sha256-47780abee08b5ba511e73c24e2c4420d1df0c473e885a4f8052c39f82a18256f",
+        "src/jobs/commands.ts": "sha256-e874e60422c5b8c812d01cb44aa7f613c61b201618767feb40f290d878f061d5"
+      },
+      "migrations": [
+        "20260927125159_add_jobs_database"
+      ]
+    },
+    "events": {
+      "files": {
+        "src/events/bus.ts": "sha256-a076f6e51728562ccc778b5cfa140b8c397f4e6950a3fd7f5087adf1cbf684a2",
+        "src/events/bus.test.ts": "sha256-8a439ad26be1b6d8455ffcd830f4f26dfb3cfcf3d845a2f7427b95b970f696ec"
+      },
+      "migrations": []
+    },
+    "storage:local": {
+      "files": {
+        "src/platform/storage.ts": "sha256-a8d07ec1950f840b4ed1c03404b5ae884163885f896054b8d0bef95ea706d65b",
+        "src/platform/storage.test.ts": "sha256-27e63111cef977d4de6e3691d22a0b45ad19c5619cc41cdcc65e65645304ac0b"
+      },
+      "migrations": []
     }
   },
   "outputs": {
@@ -79,7 +103,34 @@
     "src/auth/commands.ts": "sha256-338e998068aeb96a76e6fdb191844af41a05c70b3c93c8d20b51857bc5a17be8",
     "src/shared/permissions.ts#permissions": "sha256-e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
     "src/web/auth-pages.ts": "sha256-1a2423ce523ea9baf47f40fddd5329b8e6e84581271a490e045b27f2d5569466",
-    "src/platform/index.ts": "sha256-e3f773787acd0d9c76bc884652d47f3799afeb1e713e6d0db3c225e83425b19c"
+    "src/platform/index.ts": "sha256-fecfc06979b5ec91ea7ebadefbf77050c57295e1a20dcb7cfffd013408cad60c",
+    "src/jobs/index.ts": "sha256-740281d76e881862f5dc55c4ce300e873f7d1227bbb435871ea509ee0a47751e",
+    "src/events/index.ts": "sha256-9078d9c75237de3d8845d248b70c2ddb4c1e20c9ba849b67f0a532090f4d64ae"
   },
-  "extra": {}
+  "extra": {
+    "listener:welcome-email": {
+      "events.listeners": [
+        {
+          "from": "./listeners/welcome-email.listener",
+          "name": "welcomeEmailListener"
+        }
+      ]
+    },
+    "job:send-welcome-email": {
+      "jobs.all": [
+        {
+          "from": "./send-welcome-email.job",
+          "name": "sendWelcomeEmailJob"
+        }
+      ]
+    },
+    "job:cleanup-expired-sessions": {
+      "jobs.all": [
+        {
+          "from": "./cleanup-expired-sessions.job",
+          "name": "cleanupExpiredSessionsJob"
+        }
+      ]
+    }
+  }
 }

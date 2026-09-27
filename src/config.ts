@@ -22,6 +22,11 @@ export function loadConfig(source: EnvSource = process.env) {
       databaseUrl: env.string("DATABASE_URL").default("sqlite://:memory:"),
       migrateOnStart: env.boolean("MIGRATE_ON_START").default(false),
       trustProxy,
+      // Where LogMailer writes mail (src/shared/mailer.ts).
+      outboxPath: env.string("OUTBOX_PATH").default("data/outbox.jsonl"),
+      // Optional: chat rooms then reach clients on every instance (spec-6 §9).
+      redisUrl: env.url("REDIS_URL").optional(),
+      redisPrefix: env.string("REDIS_PREFIX").default("bun-hydrate:"),
     },
     source,
   );

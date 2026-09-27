@@ -8,3 +8,4 @@ build_output
 bun.lockb
 .tmp/
 *.sqlite
+data/

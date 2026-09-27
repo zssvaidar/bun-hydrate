@@ -1,12 +1,14 @@
 import { Can } from "../auth";
 import { AccountBar } from "../components/AccountBar";
+import { Avatar } from "../components/Avatar";
 import { Counter } from "../components/Counter";
 import { ServerTime } from "../components/ServerTime";
 
-export function Home({ initialCount }: { initialCount: number }) {
+export function Home({ initialCount, avatarUrl }: { initialCount: number; avatarUrl?: string }) {
   return (
     <main>
       <AccountBar />
+      <Avatar initialUrl={avatarUrl} />
       <h1>bun-hydrate</h1>
       <p>This page was rendered on the server and hydrated in the browser.</p>
       <Counter initial={initialCount} />

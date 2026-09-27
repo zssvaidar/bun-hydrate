@@ -1,4 +1,6 @@
-import { afterEach, describe, expect, test } from "bun:test";
+import { afterAll, afterEach, beforeAll, describe, expect, test } from "bun:test";
+import { mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { ConfigError, type Middleware } from "@bun-hydrate/core";
 import type { Database } from "@bun-hydrate/database";
@@ -9,6 +11,14 @@ import { loadConfig } from "../src/config";
 
 const passthrough: Middleware = (_ctx, next) => next();
 const databases: Database[] = [];
+
+// storage:local writes under STORAGE_ROOT (default data/storage): keep test files out of the repo.
+let storageRoot: string;
+beforeAll(async () => {
+  storageRoot = await mkdtemp(join(tmpdir(), "reference-app-storage-"));
+  process.env.STORAGE_ROOT = storageRoot;
+});
+afterAll(() => rm(storageRoot, { recursive: true, force: true }));
 
 afterEach(async () => {
   await Promise.all(databases.splice(0).map((db) => db.close()));
@@ -134,6 +144,90 @@ describe("auth in the reference app", () => {
   });
 });
 
+describe("jobs and events", () => {
+  test("registering queues the welcome mail in the same transaction as the account", async () => {
+    const { db, client } = await setup();
+    expect((await client.post("/api/v1/auth/register").header("origin", ORIGIN).json(ada)).status).toBe(201);
+
+    const jobs = await db.sql<{ name: string; payload: string }[]>`select name, payload from hydrate_jobs`;
+    expect(jobs.map((job) => job.name)).toEqual(["event:account.registered:welcome-email"]);
+    expect(JSON.parse(jobs[0]!.payload)).toMatchObject({ email: ada.email });
+  });
+
+  test("a registration that fails queues nothing", async () => {
+    const { db, client } = await setup();
+    await client.post("/api/v1/auth/register").header("origin", ORIGIN).json(ada);
+    await client.post("/api/v1/auth/logout").header("origin", ORIGIN);
+    expect((await client.post("/api/v1/auth/register").header("origin", ORIGIN).json(ada)).status).toBe(409);
+
+    expect(await db.sql`select id from hydrate_jobs`).toHaveLength(1);
+  });
+});
+
+/** The smallest valid PNG signature plus padding: enough for type sniffing. */
+const png = (size = 64) => new Uint8Array(size).map((_, i) => [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a][i] ?? 0);
+
+function avatarForm(bytes: Uint8Array<ArrayBuffer>, name = "me.png", type = "image/png") {
+  const form = new FormData();
+  form.append("avatar", new File([bytes], name, { type }));
+  return form;
+}
+
+describe("avatars", () => {
+  const AVATAR = "/api/v1/users/me/avatar";
+
+  async function signedIn() {
+    const { client } = await setup();
+    await client.post("/api/v1/auth/register").header("origin", ORIGIN).json(ada);
+    return client;
+  }
+
+  test("upload, then get a signed URL that serves the image with safe headers", async () => {
+    const client = await signedIn();
+    expect((await client.get(AVATAR)).status).toBe(404);
+
+    const uploaded = await client.put(AVATAR).header("origin", ORIGIN).form(avatarForm(png()));
+    expect(uploaded.status).toBe(200);
+    const { url } = await uploaded.json();
+    expect(url).toMatch(/^\/files\/avatars\/[^/?]+\?expires=\d+&sig=/);
+    expect((await (await client.get(AVATAR)).json()).url).toStartWith("/files/avatars/");
+
+    const image = await client.get(url);
+    expect(image.status).toBe(200);
+    expect(image.headers.get("content-type")).toBe("image/png");
+    expect(image.headers.get("x-content-type-options")).toBe("nosniff");
+    expect(image.headers.get("content-security-policy")).toBe("sandbox; default-src 'none'");
+    expect(new Uint8Array(await image.arrayBuffer())).toEqual(png());
+  });
+
+  test("the home page shows the signed-in user's avatar", async () => {
+    const client = await signedIn();
+    await client.put(AVATAR).header("origin", ORIGIN).form(avatarForm(png()));
+
+    const html = await (await client.get("/")).text();
+    expect(html).toMatch(/<img[^>]+src="\/files\/avatars\/[^"]+"/);
+    expect(payloadOf(html).props.avatarUrl).toStartWith("/files/avatars/");
+  });
+
+  test("an HTML file named .png is refused: the bytes decide, not the name or type", async () => {
+    const client = await signedIn();
+    const html = new TextEncoder().encode("<script>alert(1)</script>");
+    const res = await client.put(AVATAR).header("origin", ORIGIN).form(avatarForm(html));
+    expect(res.status).toBe(422);
+  });
+
+  test("images over 2 MB are refused", async () => {
+    const client = await signedIn();
+    const res = await client.put(AVATAR).header("origin", ORIGIN).form(avatarForm(png(2 * 1024 * 1024 + 1)));
+    expect(res.status).toBe(422);
+    expect((await res.json()).error.details[0].message).toBe("must be at most 2 MB");
+  });
+
+  test("signed out, there is no avatar to set", async () => {
+    expect((await (await client()).put(AVATAR).header("origin", ORIGIN).form(avatarForm(png()))).status).toBe(401);
+  });
+});
+
 describe("loadConfig", () => {
   test("has sensible defaults", () => {
     expect(loadConfig({})).toEqual({
@@ -144,6 +238,9 @@ describe("loadConfig", () => {
       databaseUrl: "sqlite://:memory:",
       migrateOnStart: false,
       trustProxy: false,
+      outboxPath: "data/outbox.jsonl",
+      redisUrl: undefined,
+      redisPrefix: "bun-hydrate:",
     });
   });
 
