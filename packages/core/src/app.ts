@@ -88,7 +88,7 @@ export class App extends Router {
   private stopping: Promise<void> | undefined;
   private readonly onSignal = () => void this.stop();
   private readonly websocketOptions: WebSocketOptions;
-  private readonly pubsub: PubSub | undefined;
+  private pubsub: PubSub | undefined;
   private readonly maxBodyBytes: number;
   private unsubscribePubSub: (() => Promise<void>) | undefined;
   private readonly drainHooks: StopHook[] = [];
@@ -136,6 +136,26 @@ export class App extends Router {
   onStart(hook: StartHook): this {
     this.lifecycle.onStart(hook);
     return this;
+  }
+
+  /** Sets the fan-out adapter after construction (e.g. from a generated installPlatform); before listen(). */
+  usePubSub(pubsub: PubSub): this {
+    if (this.state !== "created") throw new Error("usePubSub() must be called before listen()");
+    this.pubsub = pubsub;
+    return this;
+  }
+
+  /**
+   * Starts the lifecycle without binding a port: for worker processes that serve nothing
+   * (spec-6 §10). Start hooks run, signals stop it gracefully, stop() runs the cleanups.
+   */
+  async run(options: { handleSignals?: boolean } = {}): Promise<void> {
+    if (this.state !== "created") throw new Error(`App is already ${this.state}; run() can only be called once`);
+    await this.lifecycle.start();
+    this.lifecycle.state = "running";
+    if (options.handleSignals ?? true) {
+      for (const signal of SHUTDOWN_SIGNALS) process.on(signal, this.onSignal);
+    }
   }
 
   /**
@@ -340,7 +360,7 @@ export class App extends Router {
     if (upgrader) this.upgraders.set(ctx, upgrader);
 
     let response = await runWithTrace(trace, () =>
-      compose(this.ownMiddleware, () => this.run(dispatch, ctx), this.handleError)(ctx),
+      compose(this.ownMiddleware, () => this.runRoute(dispatch, ctx), this.handleError)(ctx),
     );
     if (this.upgraded.has(ctx)) {
       if (this.logRequests) this.logRequest(ctx, new Response(null, { status: 200 }), startedAt, 101);
@@ -362,7 +382,7 @@ export class App extends Router {
     }
   }
 
-  private async run(dispatch: Dispatch, ctx: Context): Promise<Response> {
+  private async runRoute(dispatch: Dispatch, ctx: Context): Promise<Response> {
     switch (dispatch.kind) {
       case "found":
         return dispatch.value.run(ctx);

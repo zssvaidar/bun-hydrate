@@ -209,3 +209,20 @@ describe("broadcast (spec-6 §6.2)", () => {
     await Promise.all([ra.close(), rb.close()]);
   });
 });
+
+describe("defineListener() + register()", () => {
+  test("listeners can live in their own files and be registered together", async () => {
+    const { defineListener } = await import("../src");
+    const seen: string[] = [];
+    const local = defineListener(UserRegistered, ({ userId }) => void seen.push(userId), { name: "remember" });
+    const durable = defineListener(UserRegistered, () => {}, { durable: true, name: "welcome" });
+    const events = createEventBus({ queue: createTestQueue(), logger: silent });
+
+    events.register(local, durable);
+    await events.emit(UserRegistered, { userId: "u1", email: "a@b.co" });
+    await events.idle();
+
+    expect(seen).toEqual(["u1"]);
+    expect(events.jobs().map((job) => job.name)).toEqual(["event:user.registered:welcome"]);
+  });
+});

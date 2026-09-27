@@ -110,6 +110,21 @@ interface Registered {
   durable: Map<string, JobDefinition>;
 }
 
+/** A listener kept in its own file and registered with `bus.register(...)`. */
+export interface ListenerDefinition {
+  event: EventDefinition;
+  handler: Listener<any, any>;
+  options: InProcessListenerOptions<any> | DurableListenerOptions<any>;
+}
+
+export function defineListener<Payload, const Deps extends readonly Key<unknown>[] = []>(
+  event: EventDefinition<Payload>,
+  handler: Listener<Payload, Deps>,
+  options: InProcessListenerOptions<Deps> | DurableListenerOptions<Deps> = {},
+): ListenerDefinition {
+  return { event, handler, options };
+}
+
 /** Emits events to in-process listeners, durable listeners (as jobs) and other instances (spec-6 §6). */
 export class EventBus {
   private readonly events = new Map<string, Registered>();
@@ -128,7 +143,7 @@ export class EventBus {
     handler: Listener<Payload, Deps>,
     options: InProcessListenerOptions<Deps> | DurableListenerOptions<Deps> = {},
   ): () => void {
-    const registered = this.register(event);
+    const registered = this.registration(event);
     const inject = options.inject ?? [];
 
     if (options.durable) {
@@ -156,6 +171,12 @@ export class EventBus {
     return () => void registered.local.splice(registered.local.indexOf(listener), 1);
   }
 
+  /** Registers listeners defined with defineListener(), e.g. the generated `allListeners`. */
+  register(...listeners: ListenerDefinition[]): this {
+    for (const { event, handler, options } of listeners) this.on(event, handler, options);
+    return this;
+  }
+
   /** Job definitions of the durable listeners: give them to the worker's `handlers`. */
   jobs(): JobDefinition[] {
     return [...this.events.values()].flatMap((registered) => [...registered.durable.values()]);
@@ -167,7 +188,7 @@ export class EventBus {
    * for in-process listeners: see idle().
    */
   async emit<Payload>(event: EventDefinition<Payload>, payload: NoInfer<Payload>): Promise<void> {
-    const registered = this.register(event);
+    const registered = this.registration(event);
     const value = await this.validate(event, payload);
     for (const job of registered.durable.values()) await this.options.queue!.dispatch(job, value);
 
@@ -180,7 +201,7 @@ export class EventBus {
 
   /** Delivers to the in-process listeners of every instance (at most once; spec-6 §6.2). */
   async broadcast<Payload>(event: EventDefinition<Payload>, payload: NoInfer<Payload>): Promise<void> {
-    this.register(event);
+    this.registration(event);
     const value = await this.validate(event, payload);
     const trace = currentTrace();
     this.options.onEmitted?.({ event: event.name, broadcast: true });
@@ -235,7 +256,7 @@ export class EventBus {
     });
   }
 
-  private register(event: EventDefinition): Registered {
+  private registration(event: EventDefinition): Registered {
     const existing = this.events.get(event.name);
     if (existing && existing.definition !== event) throw new Error(`Two different events are named "${event.name}"`);
     if (existing) return existing;

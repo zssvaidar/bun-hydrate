@@ -266,3 +266,33 @@ describe("shutdown phases (spec-6 §11)", () => {
     expect(order).toEqual(["request finished", "drain hook", "pubsub unsubscribed", "stop hook"]);
   });
 });
+
+describe("usePubSub() and run() (spec-6 §9, §10)", () => {
+  test("usePubSub() sets the adapter after construction, before listen()", async () => {
+    const hub = memoryPubSub();
+    const a = await startApp({ pubsub: hub });
+    const b = new App({ logger: createLogger({ level: "silent" }), health: false }).usePubSub(hub).websocket("/ws", { open: (ws) => void ws.subscribe("t") });
+    const server = await b.listen({ port: 0, hostname: "127.0.0.1", handleSignals: false });
+    apps.push(b);
+    const client = await connectWebSocket(`ws://127.0.0.1:${server.port}/ws`);
+
+    await a.app.publish("t", "via the hub");
+    expect(await client.next()).toBe("via the hub");
+    await client.close();
+    expect(() => b.usePubSub(hub)).toThrow("usePubSub() must be called before listen()");
+  });
+
+  test("run() starts the lifecycle without a port, and stop() runs the cleanups", async () => {
+    const order: string[] = [];
+    const app = new App({ logger: createLogger({ level: "silent" }), health: false });
+    app.onStart(() => {
+      order.push("started");
+      return () => void order.push("cleaned up");
+    });
+    await app.run({ handleSignals: false });
+    expect(app.state).toBe("running");
+    expect(app.server).toBeUndefined();
+    await app.stop();
+    expect(order).toEqual(["started", "cleaned up"]);
+  });
+});
