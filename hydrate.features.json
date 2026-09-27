@@ -1,0 +1,85 @@
+{
+  "version": 1,
+  "features": {
+    "auth:core": {
+      "files": {
+        "src/auth/accounts.ts": "sha256-08975b62a6cef18a4bac06229b3e1ca81bdcb3404280a7f6e31f1c03ec3389cb",
+        "src/auth/accounts.test.ts": "sha256-cf369a282c94121cc0fa2b594474f55881988fe37434d11b7ba9d1ded9dd4c39",
+        "src/auth/core.ts": "sha256-7ab9f1767f052069194a345bcb4f9721dc5c3d7adc48e5aac5a8a7bad454dfc1",
+        "src/auth/core.commands.ts": "sha256-965e16e79da789911634b0c7b9aa3f4b8090787f77fa1d706553cf09dc8c4f05"
+      },
+      "migrations": [
+        "20260927112402_add_auth_core"
+      ]
+    },
+    "auth:passwords": {
+      "files": {
+        "src/auth/passwords.ts": "sha256-8ebe42703ff31b7e094251a532c7d14009ab06d45f28208f1a8c84e8dfbf8040",
+        "src/auth/passwords.test.ts": "sha256-2164cfc0af859928a173a973aea5289923a7e63b6409f6278225e05e48354835",
+        "src/auth/passwords.commands.ts": "sha256-50208d9229b139fb6f229700c0c02a691da8fbedcd1ff61ac46065031a441842"
+      },
+      "migrations": [
+        "20260927112403_add_auth_passwords"
+      ]
+    },
+    "auth:sessions": {
+      "files": {
+        "src/auth/sessions.commands.ts": "sha256-180926939c9684e51385be48e83d1d69b737842553889a12bebd86b1d8898d98"
+      },
+      "migrations": [
+        "20260927112404_add_auth_sessions"
+      ]
+    },
+    "auth:login": {
+      "files": {
+        "src/auth/login/login.schema.ts": "sha256-6c23ab1388295b843ebac0a4e28f5faf874564473011f2ccd0f918e2ca449113",
+        "src/auth/login/login.routes.ts": "sha256-8687b859d0efac959175fed27186de61521998439f4559e17c2002f9a46301db",
+        "src/auth/login/feature.ts": "sha256-48e486abd577c833394428da9ed5b8cf4fc2f499d39229f02d1e435a49584081",
+        "src/auth/login/login.test.ts": "sha256-2d5e168f0cd1f3e2cd9e7718b23c466d1c93da37d77a355dae5a1b0fdfac0f47"
+      },
+      "migrations": []
+    },
+    "auth:react": {
+      "files": {
+        "src/web/auth.ts": "sha256-58068b7ad2d7b4403d1cf98ca534eee16a3cef8df9c21cd2e3a667c269e684e4"
+      },
+      "migrations": []
+    },
+    "auth:ui-login": {
+      "files": {
+        "src/web/pages/auth/Login.tsx": "sha256-610b18d3ec27e41560f90c1628d700eebc6180858f8df46808353adff40971a4",
+        "src/web/pages/auth/Login.test.tsx": "sha256-dd9b40681ee15d7ba07a17eb1a545a824b4f47624fbb3095653817e6f74269e7"
+      },
+      "migrations": []
+    },
+    "security:cors": {
+      "files": {
+        "src/platform/cors.ts": "sha256-5174b1e4974c689662e46d68ba58eb02e3d4e18c487e94a5e6f7a15416d6683b",
+        "src/platform/cors.test.ts": "sha256-4a85ccc742c79e71f4c837b4df60292610508dcb33300b740398cdc1b7378cc4"
+      },
+      "migrations": []
+    },
+    "rate-limit": {
+      "files": {
+        "src/platform/rate-limit.ts": "sha256-e5c1bfdb77595adb3bbbcd17e10c39d82eba200217884764100435bf3c998c64",
+        "src/platform/rate-limit.test.ts": "sha256-34857ef01570d3063edd23ff070fb93c34ab790e788a3a622ce11737e533356c"
+      },
+      "migrations": []
+    },
+    "metrics": {
+      "files": {
+        "src/platform/metrics.ts": "sha256-ad01ac599504e0c2590ebdd9c776de1bdb785ce0be57d4b16292909383d9072a",
+        "src/platform/metrics.test.ts": "sha256-8e72ffb210a3898aebd76b5f22fcb3f3dfb8d997b1bf93424cae3bbdc5c8d923"
+      },
+      "migrations": []
+    }
+  },
+  "outputs": {
+    "src/auth/index.ts": "sha256-fe9d3c630da4cc3a64eebe09a5bf09821b7cf1aa9a3bd834f515d66e1d448f14",
+    "src/auth/commands.ts": "sha256-338e998068aeb96a76e6fdb191844af41a05c70b3c93c8d20b51857bc5a17be8",
+    "src/shared/permissions.ts#permissions": "sha256-e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "src/web/auth-pages.ts": "sha256-1a2423ce523ea9baf47f40fddd5329b8e6e84581271a490e045b27f2d5569466",
+    "src/platform/index.ts": "sha256-e3f773787acd0d9c76bc884652d47f3799afeb1e713e6d0db3c225e83425b19c"
+  },
+  "extra": {}
+}

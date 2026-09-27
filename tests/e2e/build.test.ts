@@ -53,7 +53,13 @@ describe("built artifact (hydrate build → bun dist/index.js)", () => {
   test("is ready: migrations shipped in dist/ were applied to the in-memory database", async () => {
     const res = await fetch(new URL("/ready", server.url));
     expect(res.status).toBe(200);
-    expect(await (await fetch(new URL("/api/v1/users", server.url))).json()).toEqual({ items: [], nextCursor: null });
+    // Registering needs the accounts, passwords and sessions tables from the shipped migrations.
+    const registered = await fetch(new URL("/api/v1/auth/register", server.url), {
+      method: "POST",
+      headers: { "content-type": "application/json", origin: new URL(server.url).origin },
+      body: JSON.stringify({ email: "ada@example.com", password: "correct horse battery" }),
+    });
+    expect(registered.status).toBe(201);
   });
 
   test("server-renders pages and references the built client bundle", async () => {

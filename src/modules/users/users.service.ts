@@ -1,4 +1,5 @@
-import { NotFoundError } from "@bun-hydrate/core";
+import { can, type Principal } from "@bun-hydrate/auth";
+import { ForbiddenError, NotFoundError } from "@bun-hydrate/core";
 import { Database } from "@bun-hydrate/database";
 import { Clock } from "../../shared/clock";
 import type { Page } from "../../shared/pagination";
@@ -21,6 +22,13 @@ export class UsersService {
     return user;
   }
 
+  /** People with users.read see anyone; everyone else only their own entry, matched by email. */
+  async getFor(actor: Principal, id: string): Promise<User> {
+    const user = await this.get(id);
+    if (!can(actor, "users.read") && !isOwnEntry(actor, user)) throw notYours();
+    return user;
+  }
+
   list(query: ListUsersQuery): Promise<Page<User>> {
     return this.users.list(query);
   }
@@ -31,10 +39,15 @@ export class UsersService {
     return user;
   }
 
-  /** Read-check-write in one transaction, so the returned user is exactly what was stored. */
-  update(id: string, changes: UpdateUser): Promise<User> {
+  /**
+   * Read-check-write in one transaction, so the returned user is exactly what was stored. Owners
+   * may rename their entry; changing its email (which is what links it to them) needs users.update.
+   */
+  update(actor: Principal, id: string, changes: UpdateUser): Promise<User> {
     return this.db.transaction(async () => {
-      await this.get(id);
+      const user = await this.get(id);
+      const ownEdit = isOwnEntry(actor, user) && (changes.email === undefined || changes.email === user.email);
+      if (!can(actor, "users.update") && !ownEdit) throw notYours();
       await this.users.update(id, changes);
       return this.get(id);
     });
@@ -44,3 +57,9 @@ export class UsersService {
     if (!(await this.users.delete(id))) throw new NotFoundError("User not found", { code: "USER_NOT_FOUND" });
   }
 }
+
+function isOwnEntry(actor: Principal, user: User): boolean {
+  return typeof actor.claims?.email === "string" && actor.claims.email.toLowerCase() === user.email.toLowerCase();
+}
+
+const notYours = () => new ForbiddenError("You can only view and rename your own entry", { code: "NOT_YOUR_ENTRY" });

@@ -311,9 +311,9 @@ create index if not exists sessions_user_id on sessions (user_id);`,
     files: { "src/web/auth.ts": webAuth },
     outputs: [authPages],
     instructions: [
-      'Once, in the renderer: createReactRenderer({ …, shared: authShared, wrap: wrapAuth }) (import { authShared } from "../auth" and { wrapAuth } from "./auth"), and pass { ctx } to render()',
+      "Once, where you call createReactRenderer: add shared: authShared (from src/auth/index.ts) and wrap: wrapAuth (from src/web/auth.ts), and pass { ctx } to render()",
       'Once, in src/web/client.tsx: hydratePage(pages, { wrap: wrapAuth })',
-      'Once, in src/web/pages.ts: definePages({ …, ...authPages }) and serve authPageRoutes (import them from "./auth-pages")',
+      "Once, in src/web/pages.ts: definePages({ …, ...authPages }), and serve authPageRoutes next to your page routes (both from src/web/auth-pages.ts)",
     ],
   }),
 

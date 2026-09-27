@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { join } from "node:path";
+import { authenticate, type Strategy } from "@bun-hydrate/auth";
 import { App, createLogger } from "@bun-hydrate/core";
 import { Database } from "@bun-hydrate/database";
 import { Container } from "@bun-hydrate/di";
@@ -11,15 +12,32 @@ import { usersModule } from "./users.module";
 const MIGRATIONS = join(import.meta.dir, "../../../migrations");
 const NOW = new Date("2026-09-27T10:00:00.000Z");
 
+/** Signs requests in as `x-test-principal: <email>|<permission,…>`, the way sessions or tokens would. */
+const testPrincipals: Strategy = {
+  name: "test",
+  async authenticate(ctx) {
+    const header = ctx.headers.get("x-test-principal");
+    if (header === null) return undefined;
+    const [email = "", permissions = ""] = header.split("|");
+    return { id: email, kind: "user", roles: [], permissions: permissions.split(",").filter(Boolean), via: "jwt", claims: { email } };
+  },
+};
+const ADMIN = "admin@example.com|users.read,users.create,users.update,users.delete";
+
 let db: Database;
+let app: App;
 let client: TestClient;
 
 beforeEach(async () => {
   db = await createTestDatabase({ migrations: MIGRATIONS });
   const container = new Container().value(Database, db).value(Clock, () => NOW);
-  const app = new App({ logger: createLogger({ level: "silent" }), health: false }).route("/users", usersModule(container));
-  client = createTestClient(app);
+  app = new App({ logger: createLogger({ level: "silent" }), health: false })
+    .use(authenticate({ strategies: [testPrincipals] }))
+    .route("/users", usersModule(container));
+  client = createTestClient(app, { headers: { "x-test-principal": ADMIN } });
 });
+
+const as = (principal: string) => createTestClient(app, { headers: { "x-test-principal": principal } });
 
 afterEach(() => db.close());
 
@@ -110,5 +128,26 @@ describe("users module", () => {
     expect((await client.delete(`/users/${created.id}`)).status).toBe(204);
     expect((await client.get(`/users/${created.id}`)).status).toBe(404);
     expect((await client.delete(`/users/${created.id}`)).status).toBe(404);
+  });
+
+  test("signed-out callers get 401; callers without the permission get 403", async () => {
+    const member = as("bob@example.com|");
+
+    expect((await createTestClient(app).get("/users")).status).toBe(401);
+    expect((await member.get("/users")).status).toBe(403);
+    expect((await member.post("/users").json({ name: "Eve", email: "eve@example.com" })).status).toBe(403);
+    const ada = await (await createUser("Ada", "ada@example.com")).json();
+    expect((await member.get(`/users/${ada.id}`)).status).toBe(403);
+    expect((await member.delete(`/users/${ada.id}`)).status).toBe(403);
+  });
+
+  test("users may read and rename their own entry, but not move it to another email", async () => {
+    const ada = await (await createUser("Ada", "ada@example.com")).json();
+    const self = as("ada@example.com|");
+
+    expect((await self.get(`/users/${ada.id}`)).status).toBe(200);
+    expect(await (await self.patch(`/users/${ada.id}`).json({ name: "Ada L." })).json()).toMatchObject({ name: "Ada L." });
+    expect((await self.patch(`/users/${ada.id}`).json({ email: "other@example.com" })).status).toBe(403);
+    expect((await self.delete(`/users/${ada.id}`)).status).toBe(403);
   });
 });

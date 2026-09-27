@@ -32,7 +32,25 @@ export function buildArtifact(): Promise<string> {
   return artifact;
 }
 
-export async function startArtifact(): Promise<RunningServer> {
+export async function startArtifact(env: Record<string, string> = {}): Promise<RunningServer> {
   const releaseDir = await buildArtifact();
-  return spawnServer({ cmd: ["bun", "dist/index.js"], cwd: releaseDir, env: E2E_ENV });
+  return spawnServer({ cmd: ["bun", "dist/index.js"], cwd: releaseDir, env: { ...E2E_ENV, ...env } });
+}
+
+/**
+ * A SQLite file prepared the way an operator would: `hydrate db:migrate`, then
+ * `hydrate auth:create-user` for each account (password through stdin, never an argument).
+ */
+export async function prepareDatabase(accounts: { email: string; password: string; role: string }[]): Promise<string> {
+  const dir = await mkdtemp(join(tmpdir(), "hydrate-db-"));
+  const env = { ...process.env, DATABASE_URL: `sqlite://${join(dir, "app.sqlite")}` };
+  const run = (args: string[], stdin?: string) => {
+    const result = Bun.spawnSync(["bun", CLI, ...args], { cwd: ROOT, env, stdin: stdin ? Buffer.from(stdin) : "ignore", stderr: "pipe" });
+    if (result.exitCode !== 0) throw new Error(`hydrate ${args[0]} failed:\n${result.stderr}`);
+  };
+  run(["db:migrate"]);
+  for (const account of accounts) {
+    run(["auth:create-user", "--email", account.email, "--role", account.role, "--password-stdin"], `${account.password}\n`);
+  }
+  return env.DATABASE_URL;
 }

@@ -1,3 +1,4 @@
+import { requirePrincipal } from "@bun-hydrate/auth";
 import { validate } from "@bun-hydrate/validation";
 import { UsersService } from "./users.service";
 import { CreateUserBody, ListUsersQuery, UpdateUserBody, UserParams } from "./users.schema";
@@ -10,7 +11,7 @@ export class UsersController {
 
   readonly list = validate({ query: ListUsersQuery }, (_ctx, { query }) => this.users.list(query));
 
-  readonly get = validate({ params: UserParams }, (_ctx, { params }) => this.users.get(params.id));
+  readonly get = validate({ params: UserParams }, (ctx, { params }) => this.users.getFor(requirePrincipal(ctx), params.id));
 
   readonly create = validate({ body: CreateUserBody }, async (ctx, { body }) => {
     const user = await this.users.create(body);
@@ -18,8 +19,8 @@ export class UsersController {
     return user;
   });
 
-  readonly update = validate({ params: UserParams, body: UpdateUserBody }, (_ctx, { params, body }) =>
-    this.users.update(params.id, body),
+  readonly update = validate({ params: UserParams, body: UpdateUserBody }, (ctx, { params, body }) =>
+    this.users.update(requirePrincipal(ctx), params.id, body),
   );
 
   readonly remove = validate({ params: UserParams }, async (_ctx, { params }) => {

@@ -100,10 +100,12 @@ describe("build", () => {
     expect(await Bun.file(join(outDir, "index.js")).exists()).toBe(true);
   });
 
-  test("build leaves NODE_ENV as it found it, so later work in the same process is unaffected", async () => {
+  test("build leaves NODE_ENV as it found it, even when it fails, so later work in the process is unaffected", async () => {
     process.env.NODE_ENV = "test";
-    const outDir = join(await tempDir(), "dist");
-    await build({ ...(await loadHydrateConfig(fixture)), outDir }, { log: () => {} });
+    const dir = await tempDir();
+    await Bun.write(join(dir, "src/main.ts"), "export const = ;");
+
+    await expect(build(await loadHydrateConfig(dir), { log: () => {} })).rejects.toThrow(/Server bundle failed/);
     expect(process.env.NODE_ENV).toBe("test");
   });
 

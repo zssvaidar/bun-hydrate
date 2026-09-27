@@ -47,7 +47,7 @@ export const platformFeatures = [
     id: "metrics",
     description: "Prometheus metrics at /metrics (HTTP by route, process), behind METRICS_TOKEN",
     files: { "src/platform/metrics.ts": metrics, "src/platform/metrics.test.ts": metricsTest },
-    env: [{ name: "METRICS_TOKEN", description: "Bearer token scrapers send to GET /metrics (required in production)" }],
+    env: [{ name: "METRICS_TOKEN", description: "Bearer token scrapers send to GET /metrics (without it, production does not serve /metrics)" }],
     contributes: { "platform.install": [{ from: "./metrics", name: "installMetrics", call: "installMetrics(app)", order: 10 }] },
     outputs: [platformRoot],
     instructions: [WIRING],
