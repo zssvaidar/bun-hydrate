@@ -23,6 +23,15 @@
         "typescript": "^5.9.0",
       },
     },
+    "packages/auth": {
+      "name": "@bun-hydrate/auth",
+      "version": "0.1.0",
+      "peerDependencies": {
+        "@bun-hydrate/cache": "workspace:*",
+        "@bun-hydrate/core": "workspace:*",
+        "@bun-hydrate/database": "workspace:*",
+      },
+    },
     "packages/cache": {
       "name": "@bun-hydrate/cache",
       "version": "0.1.0",
@@ -92,6 +101,8 @@
     },
   },
   "packages": {
+    "@bun-hydrate/auth": ["@bun-hydrate/auth@workspace:packages/auth"],
+
     "@bun-hydrate/cache": ["@bun-hydrate/cache@workspace:packages/cache"],
 
     "@bun-hydrate/cli": ["@bun-hydrate/cli@workspace:packages/cli"],

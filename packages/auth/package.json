@@ -1,0 +1,16 @@
+{
+  "name": "@bun-hydrate/auth",
+  "version": "0.1.0",
+  "description": "Authentication and authorization: passwords, sessions, JWT, OIDC, API keys, CSRF and permissions.",
+  "license": "MIT",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./permissions": "./src/permissions.ts"
+  },
+  "peerDependencies": {
+    "@bun-hydrate/core": "workspace:*",
+    "@bun-hydrate/database": "workspace:*",
+    "@bun-hydrate/cache": "workspace:*"
+  }
+}
