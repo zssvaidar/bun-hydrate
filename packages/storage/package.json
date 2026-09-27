@@ -1,0 +1,13 @@
+{
+  "name": "@bun-hydrate/storage",
+  "version": "0.1.0",
+  "description": "File storage: one interface for memory, the local filesystem and S3-compatible stores, with signed URLs.",
+  "license": "MIT",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "peerDependencies": {
+    "@bun-hydrate/core": "workspace:*"
+  }
+}

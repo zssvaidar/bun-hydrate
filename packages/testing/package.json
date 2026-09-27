@@ -8,12 +8,14 @@
     ".": "./src/index.ts",
     "./database": "./src/database.ts",
     "./auth": "./src/auth.ts",
-    "./queue": "./src/queue.ts"
+    "./queue": "./src/queue.ts",
+    "./storage": "./src/storage.ts"
   },
   "peerDependencies": {
     "@bun-hydrate/core": "workspace:*",
     "@bun-hydrate/database": "workspace:*",
     "@bun-hydrate/auth": "workspace:*",
-    "@bun-hydrate/queue": "workspace:*"
+    "@bun-hydrate/queue": "workspace:*",
+    "@bun-hydrate/storage": "workspace:*"
   }
 }

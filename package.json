@@ -24,6 +24,7 @@
     "@bun-hydrate/rate-limit": "workspace:*",
     "@bun-hydrate/react": "workspace:*",
     "@bun-hydrate/redis": "workspace:*",
+    "@bun-hydrate/storage": "workspace:*",
     "@bun-hydrate/validation": "workspace:*",
     "react": "^19.3.0",
     "react-dom": "^19.3.0"
