@@ -1,6 +1,10 @@
 {
   "compilerOptions": {
-    "lib": ["ESNext", "DOM", "DOM.Iterable"],
+    "lib": [
+      "ESNext",
+      "DOM",
+      "DOM.Iterable"
+    ],
     "target": "ESNext",
     "module": "Preserve",
     "moduleResolution": "bundler",
@@ -14,7 +18,17 @@
     "noFallthroughCasesInSwitch": true,
     "noImplicitOverride": true,
     "skipLibCheck": true,
-    "types": ["bun"]
+    "types": [
+      "bun"
+    ]
   },
-  "include": ["packages", "src", "tests", "hydrate.config.ts"]
+  "include": [
+    "packages",
+    "src",
+    "tests",
+    "hydrate.config.ts"
+  ],
+  "exclude": [
+    "**/.tmp"
+  ]
 }

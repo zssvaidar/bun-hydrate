@@ -137,9 +137,13 @@ await db.transaction(async () => {
 - **Nested** `db.transaction()` calls become **savepoints**, so an inner failure caught by the caller rolls back only the inner block.
 - The callback also receives the transaction explicitly, for code that prefers passing it.
 
+**SQLite foreign keys.** SQLite ignores foreign keys unless each connection enables them. `createDatabase` turns them on (`PRAGMA foreign_keys = ON`), so constraints behave the same as on Postgres. The foreign-key test caught this.
+
 ### 4.3 Error mapping
 
 Driver errors differ per engine: Postgres reports SQLSTATE `23505` in `errno`, while SQLite uses `code: "SQLITE_CONSTRAINT_UNIQUE"`. `isUniqueViolation(error)` and `isForeignKeyViolation(error)` normalize them, so repositories can translate them to `ConflictError` without engine-specific code.
+
+**Tested engines:** SQLite always, and Postgres 16 when `TEST_POSTGRES_URL` is set, including savepoints and two instances migrating concurrently under the advisory lock. MySQL goes through the same Bun.SQL API, but its error codes (1062, 1451/1452) and migrations are **untested**; there is no advisory lock for it yet.
 
 ### 4.4 Migrations
 
@@ -177,8 +181,11 @@ src/modules/users/
 ├── users.service.ts      business rules; throws NotFoundError / ConflictError
 ├── users.controller.ts   HTTP concerns: input → service call → status/shape
 ├── users.routes.ts       Router: paths + validate() + controller methods
+├── users.module.ts       registers the classes in a container, returns the Router
 └── users.test.ts         HTTP tests against an in-memory database
 ```
+
+`users.module.ts` was added during implementation. It lets a module test build just the module (`new App().route("/users", usersModule(container))`), independent of `app.ts`, and gives `app.ts` a one-line mount.
 
 - Controllers are singletons resolved from the container when the app is built, and the routes file receives the controller instance: `usersRoutes(container.get(UsersController))`. Wiring is visible in `app.ts` with no route-discovery magic, which keeps generated code ordinary code (UPL §24).
 - **API conventions (spec-2):** routes are versioned under `/api/v1` (FR-230). Lists use cursor pagination, `?limit=20&cursor=…` → `{ items, nextCursor }` (FR-231).
@@ -189,7 +196,7 @@ src/modules/users/
 
 | Command | Behaviour |
 |---|---|
-| `hydrate generate module <name>` | Writes the six module files plus a `create_<table>` migration. Refuses to overwrite and prints the wiring lines to add to `app.ts`. |
+| `hydrate generate module <name>` | Writes the seven module files plus a `create_<table>` migration, and `src/shared/{clock,pagination}.ts` if they are missing. Checks every target first and refuses to overwrite, so a conflict never leaves a half-written module. Prints the wiring lines to add to `app.ts`. |
 | `hydrate generate middleware <name>` | Writes `src/middleware/<name>.ts` and its test |
 | `hydrate db:migration create <name>` | Writes an empty timestamped migration |
 | `hydrate db:migrate` | Applies pending migrations |

@@ -8,10 +8,13 @@ This repository contains the framework packages and a reference application buil
 |---|---|
 | `@bun-hydrate/core` | App, router, context, middleware, errors, typed config, lifecycle, logging, health checks, static files |
 | `@bun-hydrate/react` | Streaming SSR, safe hydration payload, dev/production asset handling |
-| `@bun-hydrate/testing` | In-process HTTP test client and a real-process `spawnServer` helper |
-| `@bun-hydrate/cli` | `hydrate dev`, `hydrate build`, `hydrate start` |
+| `@bun-hydrate/validation` | Schema builder (Standard Schema v1, so Zod/Valibot/ArkType also work) and typed `validate()` for routes |
+| `@bun-hydrate/di` | Explicit, type-checked dependency injection with singleton/scoped/transient lifetimes |
+| `@bun-hydrate/database` | Bun.SQL (Postgres/MySQL/SQLite) with ambient transactions, error mapping and SQL migrations |
+| `@bun-hydrate/testing` | In-process HTTP test client, `spawnServer`, and `createTestDatabase` |
+| `@bun-hydrate/cli` | `hydrate dev \| build \| start \| generate \| db:*` |
 
-The design lives in [`docs/design`](docs/design): spec-2 is the gap analysis, and spec-3 is the kernel design this code implements.
+The design lives in [`docs/design`](docs/design): spec-2 is the gap analysis, spec-3 the kernel, and spec-4 the backend foundation (validation, DI, database).
 
 ## Quick start
 
@@ -27,6 +30,8 @@ bun run dev          # http://localhost:3000, reloads on change
 | `bun run build` | Writes a self-contained `dist/` (`index.js`, `public/assets/*`, `manifest.json`) |
 | `bun run start` | Runs `dist/index.js` with `NODE_ENV=production` |
 | `bun test` | Unit, integration and end-to-end tests (see below) |
+| `bun hydrate generate module <name>` | Scaffold a module (schema, repository, service, controller, routes, test) and its migration |
+| `bun hydrate db:migrate` / `db:rollback` / `db:status` / `db:seed` | Manage the database named by `DATABASE_URL` |
 | `bun run typecheck` | Strict TypeScript check |
 
 The built `dist/` needs no `node_modules`, so `bun dist/index.js` runs anywhere Bun is installed. The deploy scripts (`build.sh`, `deploy.sh`, `Jenkinsfile`) rely on this.
@@ -62,6 +67,32 @@ Every app gets these defaults:
 - JSON request logs.
 - Errors in the form `{ "error": { "code", "message", "requestId" } }`. 5xx details are never exposed in production.
 
+## Modules, validation, DI and the database
+
+The reference `users` module (`src/modules/users`, served at `/api/v1/users`) shows the full path from route to database:
+
+```ts
+// users.controller.ts — typed, validated input; every issue reported at once as a 422
+readonly create = validate({ body: CreateUserBody }, async (ctx, { body }) => {
+  const user = await this.users.create(body);
+  ctx.status(201).header("location", `/api/v1/users/${user.id}`);
+  return user;
+});
+
+// users.service.ts — dependencies declared once and checked against the constructor by tsc
+static readonly inject = [UsersRepository, Database, Clock] as const;
+
+update(id: string, changes: UpdateUser) {
+  return this.db.transaction(async () => {   // repositories using db.sql join this transaction
+    await this.get(id);
+    await this.users.update(id, changes);
+    return this.get(id);
+  });
+}
+```
+
+Migrations are plain SQL files in `migrations/`, with `-- migrate:up` and `-- migrate:down` sections. `DATABASE_URL` defaults to an in-memory SQLite database that is migrated on start, so the app runs with zero setup.
+
 ## Server-rendered React
 
 ```ts
@@ -85,6 +116,8 @@ bun test                  # everything
 bun test packages         # framework unit + integration tests
 bun test tests            # reference app, incl. end-to-end
 ```
+
+Set `TEST_POSTGRES_URL` to also run the database tests against a disposable Postgres database.
 
 The end-to-end tests cover three things:
 - They start the real dev server and verify SIGTERM gives a graceful exit 0.

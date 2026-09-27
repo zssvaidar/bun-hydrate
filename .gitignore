@@ -6,4 +6,5 @@ dist
 build_output
 *.tar.gz
 bun.lockb
-tests/e2e/.tmp
+.tmp/
+*.sqlite

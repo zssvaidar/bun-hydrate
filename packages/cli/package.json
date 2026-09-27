@@ -9,5 +9,9 @@
   },
   "exports": {
     ".": "./src/index.ts"
+  },
+  "dependencies": {
+    "@bun-hydrate/database": "workspace:*",
+    "@bun-hydrate/react": "workspace:*"
   }
 }

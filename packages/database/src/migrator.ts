@@ -33,6 +33,24 @@ const TABLE = "hydrate_migrations";
 /** Arbitrary but fixed: every instance must contend for the same Postgres advisory lock. */
 const POSTGRES_LOCK_KEY = 7_243_981_022;
 
+/** `<UTC timestamp>_<snake_case name>.sql`, so files sort in creation order. */
+export function migrationFileName(name: string, now: Date): string {
+  const slug = name
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "_")
+    .replace(/^_+|_+$/g, "");
+  if (!slug) throw new Error(`"${name}" is not a usable migration name`);
+  return `${now.toISOString().replace(/\D/g, "").slice(0, 14)}_${slug}.sql`;
+}
+
+/** Writes an empty migration file; needs no database connection. */
+export async function createMigrationFile(directory: string, name: string, now = new Date()): Promise<string> {
+  const path = join(directory, migrationFileName(name, now));
+  await mkdir(directory, { recursive: true });
+  await Bun.write(path, "-- migrate:up\n\n\n-- migrate:down\n\n");
+  return path;
+}
+
 export function parseMigration(name: string, text: string): ParsedMigration {
   const up = UP_MARKER.exec(text);
   if (!up) throw new Error(`Migration ${name} has no \`-- migrate:up\` section`);
@@ -57,18 +75,8 @@ export class Migrator {
   }
 
   /** Writes an empty migration named `<UTC timestamp>_<name>.sql` and returns its path. */
-  async create(name: string): Promise<string> {
-    const slug = name
-      .toLowerCase()
-      .replace(/[^a-z0-9]+/g, "_")
-      .replace(/^_+|_+$/g, "");
-    if (!slug) throw new Error(`"${name}" is not a usable migration name`);
-
-    const timestamp = this.now().toISOString().replace(/\D/g, "").slice(0, 14);
-    const path = join(this.directory, `${timestamp}_${slug}.sql`);
-    await mkdir(this.directory, { recursive: true });
-    await Bun.write(path, "-- migrate:up\n\n\n-- migrate:down\n\n");
-    return path;
+  create(name: string): Promise<string> {
+    return createMigrationFile(this.directory, name, this.now());
   }
 
   /** Applies every pending migration, in name order, as one batch. Each file runs in its own transaction. */

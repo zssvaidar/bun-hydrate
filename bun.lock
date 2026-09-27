@@ -29,6 +29,10 @@
       "bin": {
         "hydrate": "./src/bin.ts",
       },
+      "dependencies": {
+        "@bun-hydrate/database": "workspace:*",
+        "@bun-hydrate/react": "workspace:*",
+      },
     },
     "packages/core": {
       "name": "@bun-hydrate/core",

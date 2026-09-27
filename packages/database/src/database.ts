@@ -1,4 +1,6 @@
 import { AsyncLocalStorage } from "node:async_hooks";
+import { mkdirSync } from "node:fs";
+import { dirname } from "node:path";
 import { SQL, type TransactionSQL } from "bun";
 
 export type Dialect = "postgres" | "mysql" | "sqlite";
@@ -31,6 +33,7 @@ export class Database implements AsyncDisposable {
 
   constructor(options: DatabaseOptions) {
     this.dialect = dialectOf(options.url);
+    if (this.dialect === "sqlite") ensureSqliteDirectory(options.url);
     this.raw = new SQL(options.url, options.max === undefined ? {} : { max: options.max });
     if (this.dialect === "sqlite") {
       // SQLite ignores foreign keys unless each connection opts in. Started immediately so it
@@ -71,6 +74,13 @@ export class Database implements AsyncDisposable {
   [Symbol.asyncDispose](): Promise<void> {
     return this.close();
   }
+}
+
+/** SQLite can create the file but not its directory, and says only "unable to open database file". */
+function ensureSqliteDirectory(url: string): void {
+  const path = url.replace(/^(sqlite|file):(\/\/)?/i, "").split("?")[0]!;
+  if (path === "" || path === ":memory:") return;
+  mkdirSync(dirname(path), { recursive: true });
 }
 
 export function createDatabase(options: DatabaseOptions): Database {

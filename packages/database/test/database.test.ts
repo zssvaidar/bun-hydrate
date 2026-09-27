@@ -129,6 +129,20 @@ describe("createDatabase", () => {
     );
   });
 
+  test("creates the parent directory of a SQLite database file", async () => {
+    const { mkdtemp, rm } = await import("node:fs/promises");
+    const { tmpdir } = await import("node:os");
+    const root = await mkdtemp(`${tmpdir()}/hydrate-sqlite-`);
+    try {
+      const db = createDatabase({ url: `sqlite://${root}/nested/dir/app.sqlite` });
+      expect(await db.ping()).toBe(true);
+      await db.close();
+      expect(await Bun.file(`${root}/nested/dir/app.sqlite`).exists()).toBe(true);
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
   test("ping() is false once the database is closed", async () => {
     const db = createDatabase({ url: "sqlite://:memory:" });
     await db.close();
