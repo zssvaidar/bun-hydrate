@@ -1,0 +1,33 @@
+import { afterEach, expect, test } from "bun:test";
+import { App, createLogger } from "@bun-hydrate/core";
+import { createTestClient } from "@bun-hydrate/testing";
+import { installMetrics } from "./metrics";
+
+afterEach(() => {
+  delete process.env.METRICS_TOKEN;
+});
+
+function appWithMetrics() {
+  const app = new App({ logger: createLogger({ level: "silent" }), health: false });
+  installMetrics(app);
+  app.get("/things/:id", () => "thing");
+  return { app, client: createTestClient(app) };
+}
+
+test("counts requests by route pattern", async () => {
+  const { app, client } = appWithMetrics();
+  await client.get("/things/42");
+
+  const body = await (await client.get("/metrics")).text();
+  expect(body).toContain('http_requests_total{method="GET",route="/things/:id",status="200"} 1');
+  await app.stop();
+});
+
+test("with METRICS_TOKEN set, scrapers must present it", async () => {
+  process.env.METRICS_TOKEN = "scrape-secret";
+  const { app, client } = appWithMetrics();
+
+  expect((await client.get("/metrics")).status).toBe(401);
+  expect((await client.get("/metrics").bearer("scrape-secret")).status).toBe(200);
+  await app.stop();
+});

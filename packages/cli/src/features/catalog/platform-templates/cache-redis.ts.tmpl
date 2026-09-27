@@ -1,0 +1,15 @@
+import { RedisCache, type Cache } from "@bun-hydrate/cache";
+import { defineConfig, env, type App } from "@bun-hydrate/core";
+import { token, type Container } from "@bun-hydrate/di";
+
+/** The app's cache: `container.get(AppCache)`. Values are JSON, so tests behave like production. */
+export const AppCache = token<Cache>("AppCache");
+
+/** Redis-backed cache shared by every instance; `/ready` reports it, and it closes on shutdown. */
+export function installCache(app: App, container: Container): void {
+  const { url } = defineConfig({ url: env.url("REDIS_URL") });
+  const cache = new RedisCache({ url, prefix: "cache:" });
+  container.value(AppCache, cache);
+  app.readinessCheck("cache", () => cache.ping());
+  app.onStop(() => cache.close());
+}

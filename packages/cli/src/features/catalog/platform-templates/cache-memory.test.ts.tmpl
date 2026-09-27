@@ -1,0 +1,12 @@
+import { expect, test } from "bun:test";
+import { Container } from "@bun-hydrate/di";
+import { AppCache, installCache } from "./cache";
+
+test("registers a cache that stores JSON values", async () => {
+  const container = new Container();
+  installCache(container);
+  const cache = container.get(AppCache);
+
+  await cache.set("greeting", { text: "hello" }, 60);
+  expect(await cache.get<{ text: string }>("greeting")).toEqual({ text: "hello" });
+});

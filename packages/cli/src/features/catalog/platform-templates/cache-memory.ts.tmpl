@@ -1,0 +1,10 @@
+import { MemoryCache, type Cache } from "@bun-hydrate/cache";
+import { token, type Container } from "@bun-hydrate/di";
+
+/** The app's cache: `container.get(AppCache)`. Values are JSON, so tests behave like production. */
+export const AppCache = token<Cache>("AppCache");
+
+/** In-process LRU cache. For several instances, switch: hydrate remove cache:memory, hydrate add cache:redis. */
+export function installCache(container: Container): void {
+  container.value(AppCache, new MemoryCache({ maxEntries: 10_000 }));
+}

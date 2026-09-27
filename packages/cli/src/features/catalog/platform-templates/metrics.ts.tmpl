@@ -1,0 +1,15 @@
+import { defineConfig, env, type App } from "@bun-hydrate/core";
+import { createMetrics } from "@bun-hydrate/observability";
+
+/**
+ * Prometheus metrics at GET /metrics: request counts and durations by route, plus process
+ * metrics. Scrapers send `Authorization: Bearer $METRICS_TOKEN`; the token is required in production.
+ */
+export function installMetrics(app: App): void {
+  const required = process.env.NODE_ENV === "production";
+  const { token } = defineConfig({ token: required ? env.string("METRICS_TOKEN") : env.string("METRICS_TOKEN").optional() });
+  const metrics = createMetrics();
+  app.use(metrics.http());
+  app.get("/metrics", metrics.endpoint({ token }));
+  app.onStop(() => metrics.close());
+}

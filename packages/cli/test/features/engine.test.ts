@@ -258,3 +258,29 @@ describe("doctor and sync", () => {
     expect((await readManifest(cwd)).extra).toEqual({ "module:orders": { permissions: ["orders.read"] } });
   });
 });
+
+describe("shared outputs", () => {
+  const shared = {
+    kind: "file" as const,
+    path: "src/platform/index.ts",
+    render: (slots: Slots) => `export const installed = ${JSON.stringify(slots.get<string>("platform"))};\n`,
+  };
+  const platform = new FeatureRegistry([
+    defineFeature({ id: "p:one", description: "One", outputs: [shared], contributes: { platform: ["one"] } }),
+    defineFeature({ id: "p:two", description: "Two", outputs: [shared], contributes: { platform: ["two"] } }),
+  ]);
+
+  test("an output declared by several features is rendered once and lives until the last one goes", async () => {
+    const run = async (plan: Promise<Parameters<typeof applyPlan>[1]>) => applyPlan(project, await plan);
+    const added = await planAdd(project, platform, await readManifest(cwd), ["p:one", "p:two"]);
+    expect(added.steps.map((step) => step.path)).toEqual(["src/platform/index.ts"]);
+    await run(Promise.resolve(added));
+    expect(await read("src/platform/index.ts")).toBe('export const installed = ["one","two"];\n');
+
+    await run(planRemove(project, platform, await readManifest(cwd), ["p:one"], {}));
+    expect(await read("src/platform/index.ts")).toBe('export const installed = ["two"];\n');
+
+    await run(planRemove(project, platform, await readManifest(cwd), ["p:two"], {}));
+    expect(await exists("src/platform/index.ts")).toBe(false);
+  });
+});

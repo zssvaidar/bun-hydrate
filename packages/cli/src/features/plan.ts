@@ -82,7 +82,8 @@ export async function planAdd(
   const features = added.map(({ id }) => registry.get(id));
   const env = project.env ?? process.env;
   const notes = [
-    ...features.flatMap((feature) => feature.instructions ?? []),
+    // Several features may share one-time wiring (e.g. installPlatform); say it once.
+    ...new Set(features.flatMap((feature) => feature.instructions ?? [])),
     ...features.flatMap((feature) =>
       (feature.env ?? []).filter((variable) => variable.required && !isSet(env, variable.name)).map((v) => `Set ${v.name}: ${v.description}`),
     ),
@@ -156,16 +157,19 @@ export interface RenderedOutput {
   content: string;
 }
 
+/**
+ * Every output of the installed features, rendered. Several features may declare the same output
+ * (e.g. the platform composition root); it is rendered once and exists while any of them does.
+ */
 export function renderOutputs(registry: FeatureRegistry, manifest: Manifest): RenderedOutput[] {
   const ids = registry.order(Object.keys(manifest.features));
   const slots = buildSlots(registry, ids, manifest.extra);
-  return ids.flatMap((id) =>
-    (registry.get(id).outputs ?? []).map((output) => ({
-      output,
-      key: output.kind === "file" ? output.path : `${output.path}#${output.block}`,
-      content: output.render(slots),
-    })),
-  );
+  const rendered = new Map<string, RenderedOutput>();
+  for (const output of ids.flatMap((id) => registry.get(id).outputs ?? [])) {
+    const key = output.kind === "file" ? output.path : `${output.path}#${output.block}`;
+    if (!rendered.has(key)) rendered.set(key, { output, key, content: output.render(slots) });
+  }
+  return [...rendered.values()];
 }
 
 /** Brings every output in line with `after`, recording hashes in `after.outputs`. */

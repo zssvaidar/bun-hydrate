@@ -1,0 +1,19 @@
+import { expect, test } from "bun:test";
+import { App, createLogger } from "@bun-hydrate/core";
+import { Container } from "@bun-hydrate/di";
+import { AppCache, installCache } from "./cache";
+
+// Runs when a Redis for tests is available, e.g. TEST_REDIS_URL=redis://127.0.0.1:6379
+test.if(Boolean(process.env.TEST_REDIS_URL))("registers a Redis cache and a readiness check", async () => {
+  process.env.REDIS_URL = process.env.TEST_REDIS_URL;
+  const app = new App({ logger: createLogger({ level: "silent" }), health: false });
+  const container = new Container();
+  installCache(app, container);
+  const cache = container.get(AppCache);
+
+  await cache.set("platform-test", { ok: true }, 10);
+  expect(await cache.get<{ ok: boolean }>("platform-test")).toEqual({ ok: true });
+  expect(await cache.ping()).toBe(true);
+  await cache.delete("platform-test");
+  await app.stop();
+});
