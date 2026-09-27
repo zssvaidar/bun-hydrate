@@ -96,6 +96,8 @@ export interface QueueAdapter {
   /** Dead jobs back to pending with a fresh set of attempts. */
   retry(ids: readonly string[], now: number): Promise<number>;
   purge(filter: PurgeFilter): Promise<number>;
+  /** Optional: calls `listener` when jobs are enqueued, so idle workers don't wait for their next poll. */
+  onWake?(listener: () => void): Promise<() => Promise<void>>;
   close(): Promise<void>;
 }
 

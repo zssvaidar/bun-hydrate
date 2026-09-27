@@ -87,6 +87,7 @@ export class Worker {
   private running: Promise<void> | undefined;
   private stopping: Promise<void> | undefined;
   private wake: (() => void) | undefined;
+  private stopWaking: (() => Promise<void>) | undefined;
   private readonly onSignal = () => void this.stop();
 
   constructor(private readonly options: WorkerOptions) {
@@ -121,6 +122,7 @@ export class Worker {
     every(Math.max(1, Math.floor(this.leaseMs / 3)), () => this.renewLeases());
     every(parseDuration(this.options.maintenanceInterval ?? "1m"), () => this.maintain());
     await this.maintain();
+    this.stopWaking = await this.options.queue.adapter.onWake?.(() => this.wake?.());
 
     if (this.options.signals !== false) {
       process.once("SIGTERM", this.onSignal);
@@ -144,6 +146,7 @@ export class Worker {
       for (const job of this.inFlight.values()) job.controller.abort(new ShutdownAbort());
       await Promise.all([...this.inFlight.values()].map((job) => job.done));
       await this.running;
+      await this.stopWaking?.();
       this.logger.info("Worker stopped", { workerId: this.id });
     })();
     return this.stopping;
