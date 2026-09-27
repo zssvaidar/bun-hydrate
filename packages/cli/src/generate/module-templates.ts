@@ -4,8 +4,14 @@ import { constantCase, humanize, type ModuleNames } from "./names";
  * Templates for `hydrate generate module`. The output mirrors the reference users module
  * (spec-4 §5) and must stay ordinary code: it type-checks and its test passes as generated.
  */
-export function moduleFiles(n: ModuleNames): Record<string, string> {
+/** The permissions `generate module --auth` guards the routes with. */
+export function modulePermissions(n: ModuleNames): string[] {
+  return ["read", "create", "update", "delete"].map((action) => `${n.kebab}.${action}`);
+}
+
+export function moduleFiles(n: ModuleNames, { auth = false }: { auth?: boolean } = {}): Record<string, string> {
   const e = n.entity;
+  const guard = (action: string) => (auth ? `requirePermission("${n.kebab}.${action}"), ` : "");
   const notFound = `${constantCase(e)}_NOT_FOUND`;
   const label = humanize(e);
 
@@ -165,16 +171,16 @@ export class ${n.pascal}Controller {
 }
 `,
 
-    [`${n.kebab}.routes.ts`]: `import { Router } from "@bun-hydrate/core";
+    [`${n.kebab}.routes.ts`]: `${auth ? 'import { requirePermission } from "@bun-hydrate/auth";\n' : ""}import { Router } from "@bun-hydrate/core";
 import type { ${n.pascal}Controller } from "./${n.kebab}.controller";
-
+${auth ? `\n/** Each route needs its permission (see src/shared/permissions.ts); roles grant them in src/auth/config.ts. */` : ""}
 export function ${n.camel}Routes(controller: ${n.pascal}Controller): Router {
   return new Router()
-    .get("/", controller.list)
-    .post("/", controller.create)
-    .get("/:id", controller.get)
-    .patch("/:id", controller.update)
-    .delete("/:id", controller.remove);
+    .get("/", ${guard("read")}controller.list)
+    .post("/", ${guard("create")}controller.create)
+    .get("/:id", ${guard("read")}controller.get)
+    .patch("/:id", ${guard("update")}controller.update)
+    .delete("/:id", ${guard("delete")}controller.remove);
 }
 `,
 
@@ -194,7 +200,7 @@ export function ${n.camel}Module(container: Container): Router {
 
     [`${n.kebab}.test.ts`]: `import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { join } from "node:path";
-import { App, createLogger } from "@bun-hydrate/core";
+${auth ? 'import { authenticate, type Strategy } from "@bun-hydrate/auth";\n' : ""}import { App, createLogger } from "@bun-hydrate/core";
 import { Database } from "@bun-hydrate/database";
 import { Container } from "@bun-hydrate/di";
 import { createTestClient, type TestClient } from "@bun-hydrate/testing";
@@ -207,15 +213,27 @@ const NOW = new Date("2026-01-01T00:00:00.000Z");
 
 let db: Database;
 let client: TestClient;
+${auth ? `let app: App;
 
+/** Signs requests in as a principal holding the permissions in the x-test-permissions header. */
+const testPrincipals: Strategy = {
+  name: "test",
+  async authenticate(ctx) {
+    const granted = ctx.headers.get("x-test-permissions");
+    if (granted === null) return undefined;
+    return { id: "tester", kind: "user", roles: [], permissions: granted.split(",").filter(Boolean), via: "jwt" };
+  },
+};
+const ALL = ${JSON.stringify(modulePermissions(n).join(","))};
+` : ""}
 beforeEach(async () => {
   db = await createTestDatabase({ migrations: MIGRATIONS });
   const container = new Container().value(Database, db).value(Clock, () => NOW);
-  const app = new App({ logger: createLogger({ level: "silent" }), health: false }).route(
+  ${auth ? "app" : "const app"} = new App({ logger: createLogger({ level: "silent" }), health: false })${auth ? "\n    .use(authenticate({ strategies: [testPrincipals] }))\n    " : ""}.route(
     "/${n.kebab}",
     ${n.camel}Module(container),
   );
-  client = createTestClient(app);
+  client = createTestClient(app${auth ? ', { headers: { "x-test-permissions": ALL } }' : ""});
 });
 
 afterEach(() => db.close());
@@ -253,7 +271,15 @@ describe("${n.kebab} module", () => {
     expect((await client.delete(\`/${n.kebab}/\${record.id}\`)).status).toBe(204);
     expect((await client.get(\`/${n.kebab}/\${record.id}\`)).status).toBe(404);
   });
-});
+${auth ? `
+  test("each route needs its permission: 401 when signed out, 403 without it", async () => {
+    const readOnly = createTestClient(app, { headers: { "x-test-permissions": "${n.kebab}.read" } });
+
+    expect((await createTestClient(app).get("/${n.kebab}")).status).toBe(401);
+    expect((await readOnly.get("/${n.kebab}")).status).toBe(200);
+    expect((await readOnly.post("/${n.kebab}").json({ name: "Nope" })).status).toBe(403);
+  });
+` : ""}});
 `,
   };
 }

@@ -56,7 +56,7 @@ describe("hydrate generate module", () => {
     const tsc = Bun.spawnSync(["bunx", "tsc", "--noEmit", "-p", scratch], { stdout: "pipe", stderr: "pipe" });
     expect(tsc.stdout.toString() + tsc.stderr.toString()).toBe("");
     expect(tsc.exitCode).toBe(0);
-  });
+  }, 60_000);
 
   test("the generated tests pass unchanged", () => {
     const run = Bun.spawnSync(["bun", "test", "./src/modules/order-items"], { cwd: scratch, stdout: "pipe", stderr: "pipe" });
@@ -101,4 +101,54 @@ describe("hydrate generate errors", () => {
     expect(hydrate("generate", "widget", "x").stderr).toContain('Unknown generator "widget". Available: module, middleware');
     expect(hydrate("generate", "module").stderr).toContain("Usage: hydrate generate module <name>");
   });
+});
+
+describe("hydrate generate module --auth", () => {
+  const project = join(import.meta.dir, ".tmp", `generate-auth-${process.pid}`);
+  const run = (...args: string[]) => {
+    const result = Bun.spawnSync(["bun", bin, ...args], { cwd: project, stdout: "pipe", stderr: "pipe" });
+    return { code: result.exitCode, stdout: result.stdout.toString(), stderr: result.stderr.toString() };
+  };
+
+  beforeAll(async () => {
+    await mkdir(project, { recursive: true });
+    await Bun.write(join(project, "tsconfig.json"), JSON.stringify({ extends: "../../../../../tsconfig.json", include: ["src"], exclude: [] }));
+  });
+  afterAll(() => rm(project, { recursive: true, force: true }));
+
+  test("needs auth:core, and says how to add it", () => {
+    const result = run("generate", "module", "invoices", "--auth");
+    expect(result.code).toBe(1);
+    expect(result.stderr).toContain("--auth needs auth:core. Add it first: bun hydrate add auth:core");
+  });
+
+  test("guards every route with a permission and registers the permissions between the markers", async () => {
+    expect(run("add", "auth:core", "--yes").code).toBe(0);
+    const permissionsFile = join(project, "src/shared/permissions.ts");
+    await Bun.write(permissionsFile, (await Bun.file(permissionsFile).text()).replace("] as const;", '  "reports.export",\n] as const;'));
+
+    const result = run("generate", "module", "invoices", "--auth");
+    expect(result.stderr).toBe("");
+    expect(result.code).toBe(0);
+    expect(result.stdout).toContain("invoices.read, invoices.create, invoices.update, invoices.delete");
+
+    const routes = await Bun.file(join(project, "src/modules/invoices/invoices.routes.ts")).text();
+    expect(routes).toContain('.get("/", requirePermission("invoices.read"), controller.list)');
+    expect(routes).toContain('.delete("/:id", requirePermission("invoices.delete"), controller.remove)');
+
+    const permissions = await Bun.file(permissionsFile).text();
+    expect(permissions).toContain('  "invoices.read",\n  "invoices.create",\n  "invoices.update",\n  "invoices.delete",\n  // hydrate:permissions:end');
+    expect(permissions).toContain('"reports.export",'); // outside the markers: untouched
+  });
+
+  test("the generated module type-checks and its tests (200 vs 403) pass", () => {
+    const tsc = Bun.spawnSync(["bunx", "tsc", "--noEmit", "-p", project], { stdout: "pipe", stderr: "pipe" });
+    expect(tsc.stdout.toString() + tsc.stderr.toString()).toBe("");
+
+    const tests = Bun.spawnSync(["bun", "test", "./src/modules/invoices"], { cwd: project, stdout: "pipe", stderr: "pipe" });
+    const report = tests.stderr.toString();
+    expect(report).toContain(" 0 fail");
+    expect(report).toContain(" 5 pass"); // the four CRUD tests plus the permission test
+    expect(tests.exitCode).toBe(0);
+  }, 60_000);
 });
