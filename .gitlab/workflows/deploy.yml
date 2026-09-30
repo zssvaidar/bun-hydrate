@@ -1,0 +1,130 @@
+# GitLab CI/CD pipeline for bun-hydrate - the GitLab counterpart of the Jenkinsfile, doing the
+# same thing the same way: build.sh builds the artifact, it and deploy.sh go to S3, then SSM runs
+# deploy.sh on every instance in the resource group. build.sh/deploy.sh are reused unchanged.
+#
+# This file is not at the default .gitlab-ci.yml path, so point the project at it once:
+#   Settings -> CI/CD -> General pipelines -> CI/CD configuration file: .gitlab/workflows/deploy.yml
+# See .gitlab/workflows/README.md for the runner, Vault and CI/CD variable setup.
+#
+# When it runs:
+#   - tag vX.Y.Z (a release)       -> build, upload, deploy to production, create a GitLab release
+#   - "Run pipeline" in the UI     -> build, upload, deploy (manual deploy button)
+#   - push to a branch / MR        -> build only, to catch a broken build before it's released
+
+workflow:
+  rules:
+    - if: $CI_COMMIT_TAG =~ /^v[0-9]+\.[0-9]+\.[0-9]+([-.][0-9A-Za-z.-]+)?$/
+      variables:
+        RELEASE_VERSION: $CI_COMMIT_TAG
+    - if: $CI_COMMIT_TAG
+      when: never
+    - if: $CI_PIPELINE_SOURCE == "web"
+      variables:
+        # same shape as the Jenkinsfile's "${BUILD_NUMBER}-${commitHash}"
+        RELEASE_VERSION: $CI_PIPELINE_IID-$CI_COMMIT_SHORT_SHA
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+      variables:
+        RELEASE_VERSION: mr$CI_MERGE_REQUEST_IID-$CI_COMMIT_SHORT_SHA
+    - if: $CI_COMMIT_BRANCH && $CI_OPEN_MERGE_REQUESTS
+      when: never
+    - if: $CI_COMMIT_BRANCH
+      variables:
+        RELEASE_VERSION: $CI_PIPELINE_IID-$CI_COMMIT_SHORT_SHA
+
+variables:
+  AWS_REGION: ap-northeast-1
+  AWS_DEFAULT_REGION: ap-northeast-1
+  DEPLOY_BUCKET: testing-node-app-142369633239
+  SSM_LOG_BUCKET: my-deploy-logs-bucket1
+  # matches the name run.sh instance-ami (cd-stack-gen/project-11) derives from
+  # ROLE=testing-node-app ENV_TYPE=production: "${ROLE}-${ENV_TYPE}"
+  RESOURCE_GROUP_NAME: testing-node-app-bun
+  SSM_TIMEOUT_SECONDS: "300"
+
+  VAULT_ADDR: http://192.168.0.26:8200
+  # approle (VAULT_ROLE_ID/VAULT_SECRET_ID CI/CD variables - what Jenkins' 'vault-approle' uses)
+  # or jwt (the job's own GitLab ID token - no stored secret). See README.md.
+  VAULT_AUTH_METHOD: approle
+  VAULT_JWT_ROLE: bun-hydrate-deploy
+  VAULT_JWT_MOUNT: jwt
+  VAULT_APPROLE_MOUNT: approle
+  # same Vault AWS secrets-engine roles the Jenkinsfile reads
+  VAULT_AWS_MOUNT: aws
+  VAULT_AWS_ROLE_UPLOAD: deploy-ssm-role
+  VAULT_AWS_ROLE_DEPLOY: jenkins
+
+  ARTIFACT_NAME: node-app-$RELEASE_VERSION.tar.gz
+
+  # Vault sits at a private address (192.168.0.26), so jobs must run on your own runner inside
+  # that network, not on GitLab.com's shared runners - set this to the tag you registered it with
+  DEPLOY_RUNNER_TAG: bun-hydrate-deploy
+
+stages:
+  - build
+  - upload
+  - deploy
+  - release
+
+default:
+  tags:
+    - $DEPLOY_RUNNER_TAG
+
+.deploy-runner:
+  image:
+    name: amazon/aws-cli:2.17.0
+    entrypoint: [""]
+  id_tokens:
+    # only used when VAULT_AUTH_METHOD=jwt; harmless otherwise
+    VAULT_ID_TOKEN:
+      aud: $VAULT_ADDR
+  before_script:
+    - chmod +x .gitlab/workflows/scripts/*.sh
+
+build:
+  stage: build
+  image: oven/bun:1
+  script:
+    - echo "version $RELEASE_VERSION"
+    - chmod +x build.sh
+    - ./build.sh "$RELEASE_VERSION"
+  artifacts:
+    paths:
+      - $ARTIFACT_NAME
+    expire_in: 1 week
+
+upload:
+  extends: .deploy-runner
+  stage: upload
+  needs: [build]
+  rules:
+    - if: $CI_COMMIT_TAG || $CI_PIPELINE_SOURCE == "web"
+  script:
+    - .gitlab/workflows/scripts/upload.sh
+
+deploy:
+  extends: .deploy-runner
+  stage: deploy
+  needs: [upload]
+  resource_group: production
+  environment:
+    name: production
+  rules:
+    # a release tag deploys straight away; a UI-started run waits for someone to press play
+    - if: $CI_COMMIT_TAG
+    - if: $CI_PIPELINE_SOURCE == "web"
+      when: manual
+  script:
+    - .gitlab/workflows/scripts/ssm-deploy.sh
+
+release:
+  stage: release
+  image: registry.gitlab.com/gitlab-org/release-cli:latest
+  needs: [deploy]
+  rules:
+    - if: $CI_COMMIT_TAG
+  script:
+    - echo "creating release $CI_COMMIT_TAG"
+  release:
+    tag_name: $CI_COMMIT_TAG
+    name: $CI_COMMIT_TAG
+    description: "Deployed $CI_COMMIT_TAG to production (resource group $RESOURCE_GROUP_NAME). Artifact: s3://$DEPLOY_BUCKET/$ARTIFACT_NAME"
