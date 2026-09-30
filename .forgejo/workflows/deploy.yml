@@ -1,0 +1,98 @@
+# Forgejo Actions pipeline for bun-hydrate - same deploy as the Jenkinsfile and
+# .gitlab/workflows/deploy.yml: build.sh builds the artifact, it and deploy.sh go to S3, then SSM
+# runs deploy.sh on every instance in the resource group. build.sh/deploy.sh are reused unchanged;
+# the Vault/SSM logic lives in scripts/ next to this file. Setup: README.md next to this file.
+#
+# When it runs:
+#   - tag vX.Y.Z pushed (a release)          -> build + upload, then deploy
+#   - Actions tab -> deploy -> Run workflow  -> build + upload, then deploy
+#   - push to a branch                       -> build only, to catch a broken build early
+
+name: deploy
+
+on:
+  push:
+    tags: ["v*"]
+    branches: ["**"]
+  workflow_dispatch:
+
+env:
+  AWS_REGION: ap-northeast-1
+  AWS_DEFAULT_REGION: ap-northeast-1
+  DEPLOY_BUCKET: testing-node-app-142369633239
+  SSM_LOG_BUCKET: my-deploy-logs-bucket1
+  # matches the name run.sh instance-ami (cd-stack-gen/project-11) derives from
+  # ROLE=testing-node-app ENV_TYPE=production: "${ROLE}-${ENV_TYPE}"
+  RESOURCE_GROUP_NAME: testing-node-app-bun
+  SSM_TIMEOUT_SECONDS: "300"
+
+  VAULT_ADDR: http://192.168.0.26:8200
+  VAULT_AUTH_METHOD: approle
+  VAULT_APPROLE_MOUNT: approle
+  # same Vault AWS secrets-engine roles the Jenkinsfile reads
+  VAULT_AWS_MOUNT: aws
+  VAULT_AWS_ROLE_UPLOAD: deploy-ssm-role
+  VAULT_AWS_ROLE_DEPLOY: jenkins
+
+jobs:
+  build:
+    # label from the runner's RUNNER_LABELS (cd-stack-gen/project-8/forgejo) -> node:20-bookworm
+    runs-on: bun-hydrate-deploy
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      release: ${{ steps.version.outputs.release }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - id: version
+        name: Pick version
+        # GITHUB_* env vars rather than ${{ github.* }} spliced into the script: a crafted tag
+        # name can't inject shell this way, and the case check below rejects it anyway
+        run: |
+          case "$GITHUB_REF" in
+            refs/tags/*)
+              version="$GITHUB_REF_NAME"
+              release=true
+              ;;
+            *)
+              # same shape as the Jenkinsfile's "${BUILD_NUMBER}-${commitHash}"
+              version="$GITHUB_RUN_NUMBER-$(git rev-parse --short HEAD)"
+              [ "$GITHUB_EVENT_NAME" = "workflow_dispatch" ] && release=true || release=false
+              ;;
+          esac
+          case "$version" in
+            *[!A-Za-z0-9._-]*) echo "error: version '$version' has characters unsafe for a path/S3 key" >&2; exit 1 ;;
+          esac
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "release=$release" >> "$GITHUB_OUTPUT"
+          echo "version $version (release: $release)"
+
+      - name: Install Bun
+        run: npm install -g bun@1 && bun --version
+
+      - name: Build
+        run: ./build.sh "${{ steps.version.outputs.version }}"
+
+      # Upload happens here rather than in its own job: S3 is the hand-off to the instances
+      # anyway, so there's no need to pass the tarball between jobs as an Actions artifact.
+      - name: Upload artifact and deploy.sh to S3
+        if: steps.version.outputs.release == 'true'
+        env:
+          RELEASE_VERSION: ${{ steps.version.outputs.version }}
+          VAULT_ROLE_ID: ${{ secrets.VAULT_ROLE_ID }}
+          VAULT_SECRET_ID: ${{ secrets.VAULT_SECRET_ID }}
+        run: bash .forgejo/workflows/scripts/upload.sh
+
+  deploy:
+    needs: build
+    if: needs.build.outputs.release == 'true'
+    runs-on: bun-hydrate-deploy
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Deploy via SSM
+        env:
+          RELEASE_VERSION: ${{ needs.build.outputs.version }}
+          VAULT_ROLE_ID: ${{ secrets.VAULT_ROLE_ID }}
+          VAULT_SECRET_ID: ${{ secrets.VAULT_SECRET_ID }}
+        run: bash .forgejo/workflows/scripts/ssm-deploy.sh
