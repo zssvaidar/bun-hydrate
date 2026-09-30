@@ -1,6 +1,5 @@
-# Forgejo Actions pipeline for bun-hydrate - same deploy as the Jenkinsfile and
-# .gitlab/workflows/deploy.yml: build.sh builds the artifact, it and deploy.sh go to S3, then SSM
-# runs deploy.sh on every instance in the resource group. build.sh/deploy.sh are reused unchanged;
+# Forgejo Actions pipeline for bun-hydrate - same deploy as the Jenkinsfile: build.sh builds
+# the artifact, it and deploy.sh go to S3, then SSM runs deploy.sh on every instance in the resource group. build.sh/deploy.sh are reused unchanged;
 # the Vault/SSM logic lives in scripts/ next to this file. Setup: README.md next to this file.
 #
 # When it runs:

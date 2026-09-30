@@ -1,7 +1,6 @@
 # Forgejo Actions deploy pipeline
 
-This is the Forgejo version of the `Jenkinsfile` and `.gitlab/workflows/deploy.yml`, and it
-deploys the same way:
+This is the Forgejo version of the `Jenkinsfile`, and it deploys the same way:
 
 1. `build.sh` builds `node-app-<version>.tar.gz`.
 2. The artifact and `deploy.sh` go to S3.
@@ -57,14 +56,14 @@ git tag v1.4.0 && git push forgejo v1.4.0
 Each job revokes its Vault token when it finishes, which also revokes the dynamic AWS
 credentials created for it.
 
-## Differences from the GitLab version
+## Design notes
 - **Upload is a step in the build job, not its own job.** S3 is already the hand-off to the
   instances, so there's no Actions artifact to pass between jobs.
 - **Tools are installed per job.** The job image is `node:20-bookworm` (JavaScript actions like
   `actions/checkout` need node). `lib.sh` installs `awscli` and `jq` with apt, and the build
   installs Bun with `npm install -g bun`.
-- **No manual approval step.** Forgejo has no equivalent of GitLab's `when: manual`, so running
-  the workflow from the Actions tab is itself the manual trigger. The runner's capacity of 1 also
+- **No manual approval step.** Forgejo has no "wait for a click" job, so running the workflow
+  from the Actions tab is itself the manual trigger. The runner's capacity of 1 also
   means two deploys never run at the same time.
 - **Vault login is AppRole only for now.** `lib.sh` still supports `VAULT_AUTH_METHOD=jwt`.
   Forgejo 15 added OIDC ID tokens for Actions, so AppRole can be swapped for a Vault JWT role
