@@ -52,7 +52,7 @@ bun run dev          # http://localhost:3000, reloads on change
 | `bun hydrate db:migrate` / `db:rollback` / `db:status` / `db:seed` | Manage the database named by `DATABASE_URL` |
 | `bun run typecheck` | Strict TypeScript check |
 
-The built `dist/` needs no `node_modules`, so `bun dist/index.js` and `bun dist/worker.js` run anywhere Bun is installed. The deploy scripts (`build.sh`, `deploy.sh`, `Jenkinsfile`) rely on this. [`docs/deploy`](docs/deploy) has a systemd unit for the worker, a Dockerfile and a Docker Compose file with two web instances, a worker, Postgres and Redis.
+The built `dist/` needs no `node_modules`, so `bun dist/index.js` and `bun dist/worker.js` run anywhere Bun is installed. The deploy scripts (`build.sh`, `deploy.sh`, `Jenkinsfile`) rely on this. [`docs/deploy`](docs/deploy) has a systemd unit for the worker, a Dockerfile, a Docker Compose file with two web instances, a worker, Postgres and Redis, and a [`Caddyfile`](docs/deploy/Caddyfile) for running behind Caddy (HTTPS, compression, optionally serving `/assets` from disk).
 
 ## A minimal app
 
