@@ -1,0 +1,27 @@
+// The app's global stylesheet, imported once by the client entry (src/web/client.tsx). Bun links
+// the compiled CSS from every page's <head>, so server-rendered HTML is styled before hydration.
+@use "variables" as *;
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  font-family: $font-sans;
+  line-height: 1.5;
+  color: $text;
+  background: $background;
+}
+
+main {
+  max-width: $content-width;
+  margin: 0 auto;
+  padding: $space * 2;
+}
+
+a {
+  color: $accent;
+}

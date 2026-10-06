@@ -1,4 +1,5 @@
 import { isAbsolute, join } from "node:path";
+import type { ClientPlugin } from "@bun-hydrate/react";
 import type { FeatureDefinition, FeaturePreset } from "./features/define";
 
 export interface HydrateConfigInput {
@@ -8,6 +9,11 @@ export interface HydrateConfigInput {
   worker?: string;
   /** Browser entry for hydration; omit for API-only apps. */
   client?: string;
+  /**
+   * Bun plugins for the client bundle, e.g. sassPlugin() from `@bun-hydrate/react/sass`. Pass the
+   * same list to createAssets({ plugins }) so development bundles the same way.
+   */
+  clientPlugins?: ClientPlugin[];
   /** Build output directory. Default: dist */
   outDir?: string;
   database?: {
@@ -25,6 +31,7 @@ export interface HydrateConfigInput {
 export interface HydrateConfig {
   server: string;
   client: string | undefined;
+  clientPlugins: ClientPlugin[];
   outDir: string;
   database: { migrations: string; seed: string };
   features: FeatureDefinition[];
@@ -46,6 +53,7 @@ export async function loadHydrateConfig(cwd: string): Promise<HydrateConfig> {
   return {
     server: resolvePath(input.server ?? "src/main.ts"),
     client: input.client === undefined ? undefined : resolvePath(input.client),
+    clientPlugins: input.clientPlugins ?? [],
     outDir: resolvePath(input.outDir ?? "dist"),
     database: {
       migrations: resolvePath(input.database?.migrations ?? "migrations"),

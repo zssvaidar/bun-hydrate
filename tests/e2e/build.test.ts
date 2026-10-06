@@ -78,6 +78,32 @@ describe("built artifact (hydrate build → bun dist/index.js)", () => {
     expect(res.headers.get("cache-control")).toBe("public, max-age=31536000, immutable");
   });
 
+  test("ships the app's Sass compiled to one hashed stylesheet, linked from <head> and cached forever", async () => {
+    const manifest = await Bun.file(join(releaseDir, "dist/manifest.json")).json();
+    expect(manifest.client.styles).toHaveLength(1);
+    const [href] = manifest.client.styles;
+    expect(href).toMatch(/^\/assets\/client-[a-z0-9]+\.css$/);
+
+    const html = await (await fetch(new URL("/", server.url))).text();
+    expect(html.slice(0, html.indexOf("</head>"))).toContain(`<link rel="stylesheet" href="${href}">`);
+
+    const res = await fetch(new URL(href, server.url));
+    const css = await res.text();
+    expect(res.status).toBe(200);
+    expect(res.headers.get("content-type")).toStartWith("text/css");
+    expect(res.headers.get("cache-control")).toBe("public, max-age=31536000, immutable");
+    // Variables from src/web/styles/_variables.scss and the control() mixin, compiled and minified.
+    expect(css).toContain("button{font:inherit;color:#fff;cursor:pointer;background:#0b5fff");
+    expect(css).not.toMatch(/\$[a-z]|@use|@include/);
+  });
+
+  test("the Sass compiler stays out of dist/: it runs only while building", async () => {
+    // src/main.ts imports sassPlugin() for development; sass-embedded's own code must not follow it.
+    for (const file of ["dist/index.js", "dist/worker.js"]) {
+      expect(await Bun.file(join(releaseDir, file)).text()).not.toContain("compileStringAsync");
+    }
+  });
+
   test("logs every line as JSON in production, including the startup migrations", () => {
     const messages = server.output().map((line) => JSON.parse(line).msg);
     expect(messages).toContain("Migrations applied");

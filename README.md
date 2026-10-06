@@ -145,6 +145,7 @@ Who owns which file:
 | `events` | `AppEvents`, generated `src/events/index.ts`; needs a jobs feature for durable listeners |
 | `storage:local`, `storage:s3` | `AppStorage`; local files are served through signed `/files` URLs |
 | `realtime:redis` | `app.publish()` reaches WebSocket clients on every instance |
+| `styles:sass` | `.scss`/`.sass` in the client bundle through Dart Sass, a starter `src/web/styles/app.scss`, generated `src/web/client.plugins.ts` |
 
 Operational commands come with the features that need them. They run the app's own code against `DATABASE_URL`:
 
@@ -235,6 +236,21 @@ hydratePage(pages);
 ```
 
 Page names and props are type-checked. The hydration payload is escaped so props cannot break out of the `<script>` tag.
+
+### Stylesheets
+
+Import CSS from the client entry, and every page links the result from `<head>`, so server-rendered HTML is styled before any script runs:
+
+```ts
+// src/web/client.tsx
+import "./styles/app.css";
+```
+
+Bun's bundler handles the CSS: `@import`, nesting and modern syntax are bundled and lowered, and `hydrate build` writes one minified, content-hashed stylesheet that `dist/manifest.json` lists under `client.styles`. In development, stylesheets are not modules the server imports, so `hydrate dev` cannot restart for them; instead the next request rebundles when any bundled file has changed, and a stylesheet that fails to compile shows its error in place of the page.
+
+For Sass, `bun hydrate add styles:sass`, then follow the steps it prints: `bun add -d sass-embedded`, and pass the generated `clientPlugins` to both `hydrate.config.ts` and `createAssets({ plugins })`. Sass runs only while bundling (partials included in the change tracking), so `dist/` still needs no `node_modules`. A `.scss` import without the plugin fails the bundle rather than shipping uncompiled Sass.
+
+CSS Modules (`*.module.css`) are not supported yet: during development the server renders them with empty class names.
 
 ## Tests
 

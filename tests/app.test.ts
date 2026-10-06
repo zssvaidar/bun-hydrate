@@ -28,7 +28,7 @@ async function setup() {
   const config = loadConfig({ LOG_LEVEL: "silent" });
   const db = await createTestDatabase({ migrations: join(import.meta.dir, "../migrations") });
   databases.push(db);
-  const assets = { scripts: ["/assets/client-test.js"], middleware: passthrough };
+  const assets = { scripts: ["/assets/client-test.js"], styles: ["/assets/client-test.css"], middleware: passthrough };
   return { db, client: createTestClient(createApp({ config, assets, db }), { cookies: true }) };
 }
 

@@ -47,6 +47,7 @@ describe("loadHydrateConfig", () => {
     expect(await loadHydrateConfig(fixture)).toEqual({
       server: join(fixture, "src/main.ts"),
       client: undefined,
+      clientPlugins: [],
       outDir: join(fixture, "dist"),
       database: { migrations: join(fixture, "migrations"), seed: join(fixture, "src/database/seed.ts") },
       features: [],
@@ -60,6 +61,7 @@ describe("loadHydrateConfig", () => {
     expect(await loadHydrateConfig(dir)).toEqual({
       server: join(dir, "src/main.ts"),
       client: undefined,
+      clientPlugins: [],
       outDir: join(dir, "dist"),
       database: { migrations: join(dir, "migrations"), seed: join(dir, "src/database/seed.ts") },
       features: [],

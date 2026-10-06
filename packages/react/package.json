@@ -8,12 +8,19 @@
     ".": "./src/index.ts",
     "./client": "./src/client.tsx",
     "./auth": "./src/auth.tsx",
-    "./pages": "./src/pages.ts"
+    "./pages": "./src/pages.ts",
+    "./sass": "./src/sass.ts"
   },
   "peerDependencies": {
     "@bun-hydrate/core": "workspace:*",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
-    "@bun-hydrate/auth": "workspace:*"
+    "@bun-hydrate/auth": "workspace:*",
+    "sass-embedded": "^1.80.0"
+  },
+  "peerDependenciesMeta": {
+    "sass-embedded": {
+      "optional": true
+    }
   }
 }

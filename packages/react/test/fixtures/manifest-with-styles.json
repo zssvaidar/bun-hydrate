@@ -1,0 +1,8 @@
+{
+  "client": {
+    "entry": "/assets/client-abc123.js",
+    "styles": ["/assets/client-def456.css"]
+  },
+  "server": "index.js",
+  "builtAt": "2026-01-01T00:00:00.000Z"
+}
