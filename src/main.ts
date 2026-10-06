@@ -4,6 +4,7 @@ import { Migrator, createDatabase } from "@bun-hydrate/database";
 import { createAssets } from "@bun-hydrate/react";
 import { createApp } from "./app";
 import { loadConfig, type AppConfig } from "./config";
+import { clientPlugins } from "./web/client.plugins";
 
 function loadConfigOrExit(): AppConfig {
   try {
@@ -26,6 +27,7 @@ const assets = await createAssets({
   clientEntry: join(import.meta.dir, "web/client.tsx"),
   publicDir: join(import.meta.dir, "public"),
   manifestPath: join(import.meta.dir, "manifest.json"),
+  plugins: clientPlugins,
 });
 
 const db = createDatabase({ url: config.databaseUrl });

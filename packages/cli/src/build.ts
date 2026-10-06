@@ -39,8 +39,9 @@ async function buildProduction(config: HydrateConfig, log: (message: string) => 
       entry: config.client,
       production: true,
       outdir: join(config.outDir, "public", ASSETS_PREFIX),
+      plugins: config.clientPlugins,
     });
-    client = { entry: bundle.entryUrl };
+    client = { entry: bundle.entryUrl, styles: bundle.styleUrls };
   }
 
   log(`Building server  ${config.server}`);

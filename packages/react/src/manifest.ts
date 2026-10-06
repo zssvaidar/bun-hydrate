@@ -6,7 +6,11 @@ export interface BuildManifest {
   /** The worker entry, when the app has one (spec-6 §12.2). */
   worker?: string;
   /** Present only when the app has a browser entry. */
-  client?: { entry: string };
+  client?: {
+    entry: string;
+    /** Stylesheets the client imports, linked from every page's <head>. Missing from manifests written before stylesheets were supported. */
+    styles?: string[];
+  };
 }
 
 export async function readManifest(path: string): Promise<BuildManifest> {

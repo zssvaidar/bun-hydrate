@@ -6,8 +6,8 @@ import type { PageName, PageProps, PageRegistry, SharedData } from "./pages";
 
 export interface RendererOptions<Pages extends PageRegistry> {
   pages: Pages;
-  /** Client scripts to load; usually `(await createAssets(...))`. */
-  assets: { scripts: readonly string[] };
+  /** Client scripts and stylesheets to load; usually `(await createAssets(...))`. Read on every render. */
+  assets: { scripts: readonly string[]; styles?: readonly string[] };
   lang?: string;
   defaultTitle?: string;
   /** Called for errors React recovers from (e.g. inside Suspense boundaries). Default: console.error. */
@@ -54,6 +54,7 @@ export function createReactRenderer<Pages extends PageRegistry>(options: Rendere
         lang,
         payload: sharedData === undefined ? { page: name, props } : { page: name, props, shared: sharedData },
         scripts: assets.scripts,
+        styles: assets.styles,
       });
 
       return new Response(surround(head, body, tail), {

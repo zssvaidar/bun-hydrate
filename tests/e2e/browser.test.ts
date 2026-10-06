@@ -53,6 +53,20 @@ describe.skipIf(!browserInstalled)("hydration in a real browser", () => {
     await page.close();
   });
 
+  test("the built stylesheet applies to the server-rendered page", async () => {
+    const { page, problems } = await openPage("/");
+    const style = (selector: string, property: string) =>
+      page.locator(selector).first().evaluate((element, name) => getComputedStyle(element).getPropertyValue(name), property);
+
+    // From src/web/styles/app.scss: tokens in _variables.scss, nesting, the control() mixin.
+    expect(await style("body", "margin")).toBe("0px");
+    expect(await style("main", "max-width")).toBe("768px");
+    expect(await style('[data-testid="counter"]', "background-color")).toBe("rgb(11, 95, 255)");
+    expect(await style('[data-testid="counter"]', "border-radius")).toBe("6px");
+    expect(problems).toEqual([]);
+    await page.close();
+  });
+
   test("hydrated components can call the API", async () => {
     const { page, problems } = await openPage("/");
 

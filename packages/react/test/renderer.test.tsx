@@ -4,7 +4,7 @@ import { createTestClient } from "@bun-hydrate/testing";
 import { createReactRenderer } from "../src/renderer";
 import { pages } from "./fixtures/pages";
 
-const assets = { scripts: ["/assets/client-abc.js"] };
+const assets = { scripts: ["/assets/client-abc.js"], styles: ["/assets/client-abc.css", "/assets/a&b.css"] };
 
 function createApp() {
   const react = createReactRenderer({ pages, assets, onError: () => {} });
@@ -51,6 +51,13 @@ describe("createReactRenderer", () => {
 
     expect(html).toContain('<script type="module" src="/assets/client-abc.js"></script>');
     expect(html.indexOf("__HYDRATE__")).toBeLessThan(html.indexOf("/assets/client-abc.js"));
+  });
+
+  test("links stylesheets in <head>, so the server-rendered HTML is styled before hydration", async () => {
+    const html = await (await createApp().get("/hello/Ada")).text();
+    const head = html.slice(0, html.indexOf("</head>"));
+
+    expect(head).toContain('<link rel="stylesheet" href="/assets/client-abc.css"><link rel="stylesheet" href="/assets/a&amp;b.css">');
   });
 
   test("props cannot break out of the payload script (FR-225)", async () => {

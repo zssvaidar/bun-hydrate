@@ -6,17 +6,21 @@ export interface DocumentOptions {
   lang: string;
   payload: HydrationPayload;
   scripts: readonly string[];
+  /** Linked in <head>, so server-rendered HTML is styled before any script runs. */
+  styles?: readonly string[];
 }
 
 /**
  * The HTML around the React output. React renders only into #app, so hydration never has to
  * reconcile <html>/<head>, and the shell stays a plain string.
  */
-export function documentShell({ title, lang, payload, scripts }: DocumentOptions): { head: string; tail: string } {
+export function documentShell({ title, lang, payload, scripts, styles = [] }: DocumentOptions): { head: string; tail: string } {
+  const styleTags = styles.map((href) => `<link rel="stylesheet" href="${escapeHtml(href)}">`).join("");
   const head =
     `<!doctype html><html lang="${escapeHtml(lang)}"><head>` +
     `<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">` +
     `<title>${escapeHtml(title)}</title>` +
+    styleTags +
     `</head><body><div id="${APP_ROOT_ID}">`;
 
   const scriptTags = scripts.map((src) => `<script type="module" src="${escapeHtml(src)}"></script>`).join("");

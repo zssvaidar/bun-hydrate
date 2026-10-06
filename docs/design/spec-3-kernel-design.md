@@ -291,9 +291,10 @@ hydratePage(pages);
 
 ### 10.3 Assets
 
-`createAssets({ clientEntry, publicDir, manifestPath, mode })` returns `{ scripts, middleware }`:
+`createAssets({ clientEntry, publicDir, manifestPath, mode, plugins })` returns `{ scripts, styles, middleware }`:
 - `development`: the client is built in memory with `Bun.build` at startup and served from memory under `/assets/`. No stale `dist/` can leak into dev, which was a latent issue in the old `index.tsx`.
-- `production`: script URLs are read from `dist/manifest.json`, and files are served from `dist/public` with `cache-control: public, max-age=31536000, immutable` (file names are content-hashed).
+- Stylesheets the client imports are bundled to `.css` files and linked from `<head>` (`styles`), so the server-rendered HTML is styled before hydration. In development the bundle is rebuilt on the next request when any bundled file, or a file a plugin reports through `watchFiles()` (Sass partials), has changed.
+- `production`: script and stylesheet URLs are read from `dist/manifest.json`, and files are served from `dist/public` with `cache-control: public, max-age=31536000, immutable` (file names are content-hashed).
 - The mode comes from `NODE_ENV`, which the build inlines as `"production"`.
 
 Client navigation is plain full-page loads in v0.1. A client router is a v0.5 concern (spec-1 roadmap).

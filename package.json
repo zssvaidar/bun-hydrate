@@ -36,6 +36,7 @@
     "@types/react": "^19.2.0",
     "@types/react-dom": "^19.2.0",
     "playwright-core": "1.56.1",
+    "sass-embedded": "^1.105.1",
     "typescript": "^5.9.0"
   }
 }

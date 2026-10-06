@@ -96,6 +96,10 @@
         "src/platform/storage.test.ts": "sha256-27e63111cef977d4de6e3691d22a0b45ad19c5619cc41cdcc65e65645304ac0b"
       },
       "migrations": []
+    },
+    "styles:sass": {
+      "files": {},
+      "migrations": []
     }
   },
   "outputs": {
@@ -105,7 +109,8 @@
     "src/web/auth-pages.ts": "sha256-1a2423ce523ea9baf47f40fddd5329b8e6e84581271a490e045b27f2d5569466",
     "src/platform/index.ts": "sha256-fecfc06979b5ec91ea7ebadefbf77050c57295e1a20dcb7cfffd013408cad60c",
     "src/jobs/index.ts": "sha256-740281d76e881862f5dc55c4ce300e873f7d1227bbb435871ea509ee0a47751e",
-    "src/events/index.ts": "sha256-9078d9c75237de3d8845d248b70c2ddb4c1e20c9ba849b67f0a532090f4d64ae"
+    "src/events/index.ts": "sha256-9078d9c75237de3d8845d248b70c2ddb4c1e20c9ba849b67f0a532090f4d64ae",
+    "src/web/client.plugins.ts": "sha256-7dc11ae8f7db699b465955c452577aa05f13bfbd50c70d328eae11051215b90e"
   },
   "extra": {
     "listener:welcome-email": {
